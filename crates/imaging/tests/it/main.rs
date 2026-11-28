@@ -15,6 +15,7 @@ pub(crate) mod histogram;
 pub(crate) mod hosted_dialogs;
 pub(crate) mod layer_style;
 pub(crate) mod layer_style_angle_range;
+pub(crate) mod layer_style_reset_alignment;
 pub(crate) mod liquify;
 pub(crate) mod live_preview;
 pub(crate) mod perspective_warp;

@@ -65,6 +65,10 @@ pub enum FieldKind {
         min: f64,
         /// The highest value the field takes, in degrees.
         max: f64,
+        /// The key of a point parameter that a Reset Alignment button, right of the field on the
+        /// same row, sets back to (0, 0) (Gradient Overlay's `offset`, which the drag on the image
+        /// moves); `None` shows no button.
+        reset_alignment: Option<Cow<'static, str>>,
     },
     /// A pattern from the host's pattern list; the first entry when the value is empty.
     Pattern,
@@ -144,9 +148,9 @@ impl EffectSpec {
     /// - Color Overlay: blend; color; opacity 0..100 %. Defaults: Normal, #ff0000, 100.
     /// - Gradient Overlay: blend; opacity; stops Gradient (Gradient); reverse Reverse; style
     ///   Style (linear Linear, radial Radial, angle Angle, reflected Reflected, diamond Diamond);
-    ///   angle −360..360 °; scale Scale 10..150 %; method Method (GradientMethod). Defaults:
-    ///   Normal, 100, black to white, false, linear, 90, 100, custom, and `offset` (0, 0), a point
-    ///   with no field that the drag on the image moves.
+    ///   angle −360..360 ° with Reset Alignment of `offset`; scale Scale 10..150 %; method Method
+    ///   (GradientMethod). Defaults: Normal, 100, black to white, false, linear, 90, 100, custom,
+    ///   and `offset` (0, 0), a point with no field of its own that the drag on the image moves.
     /// - Pattern Overlay: blend; opacity; pattern Pattern; angle; scale Scale 1..1000 %; link Link
     ///   with Layer. Defaults: Normal, 100, "", 0, 100, true.
     /// - Bevel & Emboss: style Style (inner Inner Bevel, outer Outer Bevel, emboss Emboss, pillow
@@ -327,7 +331,7 @@ impl EffectSpec {
                         "Style",
                         choice(&[("linear", "Linear"), ("radial", "Radial"), ("angle", "Angle"), ("reflected", "Reflected"), ("diamond", "Diamond")]),
                     ),
-                    field("angle", "Angle", turn_either_way()),
+                    field("angle", "Angle", FieldKind::Angle { min: -360.0, max: 360.0, reset_alignment: Some(Cow::Borrowed("offset")) }),
                     field("scale", "Scale", slider(10.0, 150.0, Percent)),
                     field("method", "Method", FieldKind::GradientMethod),
                 ],
@@ -454,12 +458,12 @@ fn field(key: &'static str, label: &'static str, kind: FieldKind) -> EffectField
 
 /// An angle field that takes the dial's own range, −180..=180°.
 fn one_turn() -> FieldKind {
-    FieldKind::Angle { min: -180.0, max: 180.0 }
+    FieldKind::Angle { min: -180.0, max: 180.0, reset_alignment: None }
 }
 
 /// An angle field that takes up to a turn either way, −360..=360°; the dial still gives −180..=180.
 fn turn_either_way() -> FieldKind {
-    FieldKind::Angle { min: -360.0, max: 360.0 }
+    FieldKind::Angle { min: -360.0, max: 360.0, reset_alignment: None }
 }
 
 fn slider(min: f64, max: f64, unit: FieldUnit) -> FieldKind {

@@ -107,7 +107,8 @@ pub(super) struct PageOutput {
 /// - `Slider`: a `SliderField` over the range with the unit, whole numbers; a drag is a gesture, a typed value or an
 ///   arrow a `Set`.
 /// - `Angle`: an `AngleDial` (−180..=180) beside a number field that holds a typed value to the field's `min..=max` and
-///   writes it as typed; with the instance's `useGlobalLight` on its edits go to the shared light angle.
+///   writes it as typed; with the instance's `useGlobalLight` on its edits go to the shared light angle. With a
+///   `reset_alignment` key, a Reset Alignment button right of the field sets that point back to (0, 0) in one edit.
 /// - `Color`: a `Swatch`; a click or Space reports `pick_color`.
 /// - `Blend`: a `Select` over `blend_modes`; a value missing from the list shows as its key.
 /// - `Choice`: a `Select` over the options; a missing value shows the first.
@@ -197,7 +198,7 @@ fn field_row(ui: &mut Ui, input: &PageInput<'_>, field: &EffectField, shown: &St
                 push_edit(&mut out.edit, style_edit(&slider, input.style, |v| param(StyleValue::Number(v.round()))));
             }
         }
-        FieldKind::Angle { min, max } => {
+        FieldKind::Angle { min, max, reset_alignment } => {
             let value = shown.number(key).unwrap_or(0.0);
             let edits = Field::new(label.clone())
                 .id_salt(key)
@@ -212,15 +213,24 @@ fn field_row(ui: &mut Ui, input: &PageInput<'_>, field: &EffectField, shown: &St
                                 .id_salt("field")
                                 .show(ui)
                                 .edit;
-                            (dial, number)
+                            let reset =
+                                reset_alignment.is_some() && clicked(&Button::new(words.reset_alignment.clone()).id_salt("resetAlignment").show(ui));
+                            (dial, number, reset)
                         })
                         .inner
                 })
                 .inner
                 .flatten();
-            if let Some((dial, number)) = edits {
+            if let Some((dial, number, reset)) = edits {
                 push_edit(&mut out.edit, style_edit(&dial, input.style, |v| param(StyleValue::Number(*v))));
                 push_edit(&mut out.edit, style_edit(&number.map(|v| v.unwrap_or(value)), input.style, |v| param(StyleValue::Number(*v))));
+                // Reset Alignment puts the offset back to the centre and leaves every other value alone; an offset
+                // already at the centre, or none at all, has nothing to reset.
+                const CENTRE: StyleValue = StyleValue::Point([0.0, 0.0]);
+                if let Some(offset) = reset_alignment.as_deref().filter(|offset| reset && shown.get(offset).is_some_and(|at| *at != CENTRE)) {
+                    let op = StyleOp::Param { id, key: offset.to_owned(), value: CENTRE };
+                    push_edit(&mut out.edit, set_edit(input.style, &op, words.reset_alignment.as_str()));
+                }
             }
         }
         FieldKind::Color => {

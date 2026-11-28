@@ -34,6 +34,8 @@ craft_ui::words! {
         new_style: "layerStyle.newStyle" = "New Style…";
         make_default: "layerStyle.makeDefault" = "Make Default";
         reset_to_default: "layerStyle.resetToDefault" = "Reset to Default";
+        /// The button right of Gradient Overlay's Angle that puts a gradient dragged on the image back in the centre.
+        reset_alignment: "layerStyle.resetAlignment" = "Reset Alignment";
         /// The colour picker's title for an effect colour.
         color_picker_title: "layerStyle.colorPickerTitle" = "Color Picker (Layer Style Color)";
         /// One line over a page whose host values have the wrong type; `{field}` names the first.

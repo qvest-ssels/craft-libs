@@ -56,10 +56,11 @@ const ONE_TURN: [EffectKind; 3] = [EffectKind::PatternOverlay, EffectKind::Bevel
 fn the_photoshop_tables_give_each_angle_field_its_typed_range() {
     let range = |kind| EffectSpec::photoshop(kind).field("angle").map(|field| field.kind.clone());
     for kind in TURN_EITHER_WAY {
-        assert_eq!(range(kind), Some(FieldKind::Angle { min: -360.0, max: 360.0 }), "{kind:?}");
+        let reset_alignment = (kind == EffectKind::GradientOverlay).then_some("offset".into());
+        assert_eq!(range(kind), Some(FieldKind::Angle { min: -360.0, max: 360.0, reset_alignment }), "{kind:?}");
     }
     for kind in ONE_TURN {
-        assert_eq!(range(kind), Some(FieldKind::Angle { min: -180.0, max: 180.0 }), "{kind:?}");
+        assert_eq!(range(kind), Some(FieldKind::Angle { min: -180.0, max: 180.0, reset_alignment: None }), "{kind:?}");
     }
 }
 
