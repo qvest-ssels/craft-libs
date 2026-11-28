@@ -56,9 +56,16 @@ pub enum FieldKind {
     Gradient,
     #[allow(missing_docs)]
     Check,
-    /// An angle dial and field, −180..=180°. With the effect's `useGlobalLight` on, it edits the
-    /// shared light angle.
-    Angle,
+    /// An angle dial and a degree field. The dial gives −180..=180°; the field holds a typed
+    /// value to `min..=max` (−360..=360 where Photoshop takes up to a turn either way) and passes
+    /// it on as typed, so a host that keeps angles in −180..=180 wraps it when it applies the
+    /// style. With the effect's `useGlobalLight` on, it edits the shared light angle.
+    Angle {
+        /// The lowest value the field takes, in degrees.
+        min: f64,
+        /// The highest value the field takes, in degrees.
+        max: f64,
+    },
     /// A pattern from the host's pattern list; the first entry when the value is empty.
     Pattern,
     /// A contour thumbnail with the preset picker and the Contour Editor; `anti_alias` is the
@@ -114,12 +121,13 @@ impl EffectSpec {
     }
 
     /// Photoshop's table and factory defaults for `kind`, as PhotoCraft has them. Keys and labels,
-    /// ranges in the field's unit (Slider min..max unit):
+    /// ranges in the field's unit (Slider min..max unit). An angle field takes −180..=180° unless
+    /// its entry says otherwise:
     ///
-    /// - Drop Shadow: blend Blend Mode; color Color; opacity Opacity 0..100 %; angle Angle;
-    ///   useGlobalLight Use Global Light; distance Distance 0..300 px; spread Spread 0..100 %;
-    ///   size Size 0..250 px; contour Contour (anti-alias key `antiAlias`); noise Noise 0..100 %;
-    ///   knocksOut Layer Knocks Out Drop Shadow. Defaults: Multiply, #000000, 75, 120, true, 5, 0,
+    /// - Drop Shadow: blend Blend Mode; color Color; opacity Opacity 0..100 %; angle Angle
+    ///   −360..360 °; useGlobalLight Use Global Light; distance Distance 0..300 px; spread
+    ///   Spread 0..100 %; size Size 0..250 px; contour Contour (anti-alias key `antiAlias`); noise
+    ///   Noise 0..100 %; knocksOut Layer Knocks Out Drop Shadow. Defaults: Multiply, #000000, 75, 120, true, 5, 0,
     ///   5, Linear, antiAlias false, 0, true.
     /// - Inner Shadow: as Drop Shadow with choke Choke 0..100 % in place of Spread and no
     ///   knocksOut. Defaults: Multiply, #000000, 75, 120, true, 5, choke 0, 5, Linear, false, 0.
@@ -136,9 +144,9 @@ impl EffectSpec {
     /// - Color Overlay: blend; color; opacity 0..100 %. Defaults: Normal, #ff0000, 100.
     /// - Gradient Overlay: blend; opacity; stops Gradient (Gradient); reverse Reverse; style
     ///   Style (linear Linear, radial Radial, angle Angle, reflected Reflected, diamond Diamond);
-    ///   angle; scale Scale 10..150 %; method Method (GradientMethod). Defaults: Normal, 100,
-    ///   black to white, false, linear, 90, 100, custom, and `offset` (0, 0), a point with no
-    ///   field that the drag on the image moves.
+    ///   angle −360..360 °; scale Scale 10..150 %; method Method (GradientMethod). Defaults:
+    ///   Normal, 100, black to white, false, linear, 90, 100, custom, and `offset` (0, 0), a point
+    ///   with no field that the drag on the image moves.
     /// - Pattern Overlay: blend; opacity; pattern Pattern; angle; scale Scale 1..1000 %; link Link
     ///   with Layer. Defaults: Normal, 100, "", 0, 100, true.
     /// - Bevel & Emboss: style Style (inner Inner Bevel, outer Outer Bevel, emboss Emboss, pillow
@@ -173,7 +181,7 @@ impl EffectSpec {
                     field("blend", "Blend Mode", FieldKind::Blend),
                     field("color", "Color", FieldKind::Color),
                     field("opacity", "Opacity", percent()),
-                    field("angle", "Angle", FieldKind::Angle),
+                    field("angle", "Angle", turn_either_way()),
                     field("useGlobalLight", "Use Global Light", FieldKind::Check),
                     field("distance", "Distance", slider(0.0, 300.0, Pixels)),
                     field("spread", "Spread", percent()),
@@ -203,7 +211,7 @@ impl EffectSpec {
                     field("blend", "Blend Mode", FieldKind::Blend),
                     field("color", "Color", FieldKind::Color),
                     field("opacity", "Opacity", percent()),
-                    field("angle", "Angle", FieldKind::Angle),
+                    field("angle", "Angle", turn_either_way()),
                     field("useGlobalLight", "Use Global Light", FieldKind::Check),
                     field("distance", "Distance", slider(0.0, 300.0, Pixels)),
                     field("choke", "Choke", percent()),
@@ -319,7 +327,7 @@ impl EffectSpec {
                         "Style",
                         choice(&[("linear", "Linear"), ("radial", "Radial"), ("angle", "Angle"), ("reflected", "Reflected"), ("diamond", "Diamond")]),
                     ),
-                    field("angle", "Angle", FieldKind::Angle),
+                    field("angle", "Angle", turn_either_way()),
                     field("scale", "Scale", slider(10.0, 150.0, Percent)),
                     field("method", "Method", FieldKind::GradientMethod),
                 ],
@@ -341,7 +349,7 @@ impl EffectSpec {
                     field("blend", "Blend Mode", FieldKind::Blend),
                     field("opacity", "Opacity", percent()),
                     field("pattern", "Pattern", FieldKind::Pattern),
-                    field("angle", "Angle", FieldKind::Angle),
+                    field("angle", "Angle", one_turn()),
                     field("scale", "Scale", slider(1.0, 1000.0, Percent)),
                     field("link", "Link with Layer", FieldKind::Check),
                 ],
@@ -367,7 +375,7 @@ impl EffectSpec {
                     field("direction", "Direction", choice(&[("up", "Up"), ("down", "Down")])),
                     field("size", "Size", slider(0.0, 250.0, Pixels)),
                     field("soften", "Soften", slider(0.0, 16.0, Pixels)),
-                    field("angle", "Angle", FieldKind::Angle),
+                    field("angle", "Angle", one_turn()),
                     field("useGlobalLight", "Use Global Light", FieldKind::Check),
                     field("altitude", "Altitude", slider(0.0, 90.0, Degrees)),
                     field("glossContour", "Gloss Contour", contour("glossAntiAlias")),
@@ -411,7 +419,7 @@ impl EffectSpec {
                     field("blend", "Blend Mode", FieldKind::Blend),
                     field("color", "Color", FieldKind::Color),
                     field("opacity", "Opacity", percent()),
-                    field("angle", "Angle", FieldKind::Angle),
+                    field("angle", "Angle", one_turn()),
                     field("distance", "Distance", slider(0.0, 250.0, Pixels)),
                     field("size", "Size", slider(0.0, 250.0, Pixels)),
                     field("contour", "Contour", contour("antiAlias")),
@@ -442,6 +450,16 @@ impl EffectSpec {
 
 fn field(key: &'static str, label: &'static str, kind: FieldKind) -> EffectField {
     EffectField { key: Cow::Borrowed(key), label: Cow::Borrowed(label), kind }
+}
+
+/// An angle field that takes the dial's own range, −180..=180°.
+fn one_turn() -> FieldKind {
+    FieldKind::Angle { min: -180.0, max: 180.0 }
+}
+
+/// An angle field that takes up to a turn either way, −360..=360°; the dial still gives −180..=180.
+fn turn_either_way() -> FieldKind {
+    FieldKind::Angle { min: -360.0, max: 360.0 }
 }
 
 fn slider(min: f64, max: f64, unit: FieldUnit) -> FieldKind {

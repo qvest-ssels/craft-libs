@@ -29,8 +29,6 @@ use crate::layer_style::{
 
 /// The angle field shows whole degrees.
 const WHOLE: usize = 0;
-/// The angle dial's range, in degrees.
-const ANGLE_RANGE: std::ops::RangeInclusive<f64> = -180.0..=180.0;
 
 /// What a part of the dialog did to the style: the operation an event replays on the style it started from.
 #[derive(Clone, Debug)]
@@ -108,8 +106,8 @@ pub(super) struct PageOutput {
 ///
 /// - `Slider`: a `SliderField` over the range with the unit, whole numbers; a drag is a gesture, a typed value or an
 ///   arrow a `Set`.
-/// - `Angle`: an `AngleDial` beside a number field, −180..=180; with the instance's `useGlobalLight` on its edits go to
-///   the shared light angle.
+/// - `Angle`: an `AngleDial` (−180..=180) beside a number field that holds a typed value to the field's `min..=max` and
+///   writes it as typed; with the instance's `useGlobalLight` on its edits go to the shared light angle.
 /// - `Color`: a `Swatch`; a click or Space reports `pick_color`.
 /// - `Blend`: a `Select` over `blend_modes`; a value missing from the list shows as its key.
 /// - `Choice`: a `Select` over the options; a missing value shows the first.
@@ -199,7 +197,7 @@ fn field_row(ui: &mut Ui, input: &PageInput<'_>, field: &EffectField, shown: &St
                 push_edit(&mut out.edit, style_edit(&slider, input.style, |v| param(StyleValue::Number(v.round()))));
             }
         }
-        FieldKind::Angle => {
+        FieldKind::Angle { min, max } => {
             let value = shown.number(key).unwrap_or(0.0);
             let edits = Field::new(label.clone())
                 .id_salt(key)
@@ -210,7 +208,7 @@ fn field_row(ui: &mut Ui, input: &PageInput<'_>, field: &EffectField, shown: &St
                             let number = NumberField::new(label.clone(), Bind::given(Some(value)))
                                 .codec(NumberCodec::new(input.units.reader(Some(UnitKind::Degrees)), WHOLE))
                                 .unit_kind(UnitKind::Degrees)
-                                .range(ANGLE_RANGE)
+                                .range(*min..=*max)
                                 .id_salt("field")
                                 .show(ui)
                                 .edit;
@@ -382,7 +380,7 @@ fn field_row(ui: &mut Ui, input: &PageInput<'_>, field: &EffectField, shown: &St
 fn first_invalid<'s>(spec: &'s EffectSpec, params: &StyleParams) -> Option<&'s EffectField> {
     let wrong = |key: &str, ok: fn(&StyleValue) -> bool| params.get(key).is_some_and(|v| !ok(v));
     spec.fields.iter().find(|field| match &field.kind {
-        FieldKind::Slider { .. } | FieldKind::Angle => wrong(&field.key, |v| matches!(v, StyleValue::Number(_))),
+        FieldKind::Slider { .. } | FieldKind::Angle { .. } => wrong(&field.key, |v| matches!(v, StyleValue::Number(_))),
         FieldKind::Check => wrong(&field.key, |v| matches!(v, StyleValue::Bool(_))),
         FieldKind::Color => wrong(&field.key, |v| matches!(v, StyleValue::Color(_))),
         FieldKind::Gradient => wrong(&field.key, |v| matches!(v, StyleValue::Gradient(_))),
