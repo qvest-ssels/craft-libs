@@ -1017,6 +1017,7 @@ impl<V: NumberValue + 'static> Component for NumberField<'_, V> {
             typed_unit: committed.and_then(|note| note.unit).and_then(UnitKind::from_tag),
             out_of_range,
             cut: committed.is_some_and(|note| note.cut),
+            committed: committed.is_some(),
             link: cx.link_activated(),
         }
     }

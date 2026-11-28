@@ -4,19 +4,20 @@
 use super::FormDialog;
 use super::size_model::{LinkedSize, MAX_DOCUMENT_SIDE};
 use crate::contract::{Bind, Bracket, Entry, NoValue, Outcome, Props as _, Show as _, ShowContainer as _, Sizing};
-use crate::dialog::{DialogResult, FieldRefusal, HeldAnswer};
+use crate::dialog::{Alert, DialogResult, FieldRefusal, HeldAnswer};
 use crate::display::Text;
 use crate::form::{Field, FieldGroup};
 use crate::layout_components::{Row, Stack};
 use crate::pickers::UnitSelect;
 use crate::runtime::env::{Env, Label, UnitKind, Units};
 use crate::runtime::overlay::CloseReason;
-use crate::text::{LinkMode, LinkedWords, link_toggle};
+use crate::text::{LinkMode, LinkedWords, TextWords, link_toggle};
 use craft_behavior::PixelSize;
 use craft_keymap::Key;
 use craft_theme::variant::Tone;
 use egui::{Response, Ui};
 use serde::{Deserialize, Serialize};
+use std::ops::RangeInclusive;
 use std::sync::Arc;
 
 pub(crate) mod canvas;
@@ -212,6 +213,9 @@ pub struct SizingOutput<R> {
     pub closed: Option<CloseReason>,
     /// The answer, the pass the dialog closed as OK.
     pub result: Option<R>,
+    /// The range alert of a value typed in a row and replaced by the closest value it takes, in the pass it was
+    /// committed (Image Size only).
+    pub(crate) range_alert: Option<SizeAlert>,
 }
 
 impl<R> SizingOutput<R> {
@@ -305,7 +309,50 @@ pub(super) fn show_form<'a, S: SizeForm + Default, R>(
         FieldGroup::new(title.clone()).show(ui, |ui, _| rows(ui, state));
         size_valid(state.pixels())
     });
-    SizingOutput { response: shown.response, closed: shown.closed, result: shown.accepted.map(|state| answer(&state)) }
+    SizingOutput { response: shown.response, closed: shown.closed, result: shown.accepted.map(|state| answer(&state)), range_alert: None }
+}
+
+/// A value typed in an Image Size row that the row did not take as typed: one past the row's range, or a fraction in
+/// a row of whole pixels. The row inserted the closest value it takes; the alert names the range.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct SizeAlert {
+    /// The values the row takes, in its unit.
+    range: RangeInclusive<f64>,
+    /// The digits after the decimal mark the range's ends are written with; `None` when the row takes whole numbers.
+    decimals: Option<u8>,
+}
+
+impl SizeAlert {
+    /// The alert of a typed commit in a row of `kind` over `range`: `held` when the row held the number to its range,
+    /// `typed` the number it committed. Only the units whose alert is known have one: whole Pixels (which also alert
+    /// a fraction), Percent and Inches, and the resolution in pixels per inch.
+    fn of(kind: UnitKind, resolution: bool, range: RangeInclusive<f64>, held: bool, typed: Option<f64>) -> Option<Self> {
+        let decimals = match (kind, resolution) {
+            (UnitKind::Pixels, false) => None,
+            (UnitKind::Percent, false) => Some(2),
+            (UnitKind::Inches, false) | (UnitKind::PixelsPerInch, true) => Some(3),
+            _ => return None,
+        };
+        let fraction = decimals.is_none() && typed.is_some_and(|number| number.is_finite() && number.fract() != 0.0);
+        (held || fraction).then_some(SizeAlert { range, decimals })
+    }
+
+    /// The alert titled `title`, in the words and number format of `env`: "An integer between 1 and 300000 is
+    /// required. Closest value inserted.", or "A number between 0.014 and 4166.666 …" at the row's decimals. The ends
+    /// are rounded inward to those decimals, so each lies in the range, and carry no digit groups and no unit.
+    pub(crate) fn alert(&self, title: Label, env: &Env) -> Alert<'static> {
+        let words = env.words::<TextWords>();
+        let units = env.units();
+        let digits = self.decimals.unwrap_or(0);
+        let scale = 10f64.powi(i32::from(digits));
+        // The margin keeps an end on its digits (0.25 % is 25.000000000000004 hundredths) from moving a digit inward.
+        let low = ((self.range.start() * scale) - 1e-6).ceil() / scale;
+        let high = ((self.range.end() * scale) + 1e-6).floor() / scale;
+        let shown = |n: f64| units.number_ungrouped(n, usize::from(digits)..=usize::from(digits));
+        let (low, high) = (shown(low), shown(high));
+        let sentence = if self.decimals.is_none() { &words.range_integer } else { &words.range_number };
+        Alert::new(title, sentence.fill(&[("low", low.as_str()), ("high", high.as_str())]))
+    }
 }
 
 /// The rows both dialogs show, with the words and units they need.
@@ -412,14 +459,16 @@ impl Kit {
         }
     }
 
-    /// The width and height rows, with the chain bracketed to them when the model draws one.
-    pub(super) fn sides(&self, ui: &mut Ui, size: &mut LinkedSize) {
+    /// The width and height rows, with the chain bracketed to them when the model draws one, and the range alert of a
+    /// value typed in one of them.
+    pub(super) fn sides(&self, ui: &mut Ui, size: &mut LinkedSize) -> Option<SizeAlert> {
+        let mut alert = None;
         let chain = size.has_chain();
         let row = if chain { Row::new().bracket(if size.is_linked() { Bracket::Linked } else { Bracket::Unlinked }) } else { Row::new() };
         row.show(ui, |ui, _| {
             Stack::new().show(ui, |ui, _| {
-                self.row(ui, size, Dimension::Width);
-                self.row(ui, size, Dimension::Height);
+                let width = self.row(ui, size, Dimension::Width);
+                alert = self.row(ui, size, Dimension::Height).or(width);
             });
             if chain {
                 let toggle = link_toggle(self.link.clone(), Bind::given(size.is_linked())).enabled(size.is_resampling()).id_salt("link").show(ui);
@@ -428,15 +477,16 @@ impl Kit {
                 }
             }
         });
+        alert
     }
 
-    /// The resolution row.
-    pub(super) fn resolution(&self, ui: &mut Ui, size: &mut LinkedSize) {
-        self.row(ui, size, Dimension::Resolution);
+    /// The resolution row, and the range alert of a value typed in it.
+    pub(super) fn resolution(&self, ui: &mut Ui, size: &mut LinkedSize) -> Option<SizeAlert> {
+        self.row(ui, size, Dimension::Resolution)
     }
 
-    /// One number with its unit, over the model.
-    fn row(&self, ui: &mut Ui, size: &mut LinkedSize, which: Dimension) {
+    /// One number with its unit, over the model, and the range alert of a value typed in it.
+    fn row(&self, ui: &mut Ui, size: &mut LinkedSize, which: Dimension) -> Option<SizeAlert> {
         let words = &self.words;
         let widths = if size.columns().is_some() { &self.widths } else { &self.lengths };
         let (name, unit_name, value, range, unit, entries, salt) = match which {
@@ -461,6 +511,7 @@ impl Kit {
         if !editable {
             field = field.tooltip(words.resample_off.clone());
         }
+        let mut alert = None;
         field.show(ui, |ui, _| {
             let shown = UnitSelect::new(name.clone(), Bind::given(Some(value)), Bind::given(unit), entries)
                 .range(range.clone())
@@ -469,6 +520,12 @@ impl Kit {
                 .sizing(Sizing::Content)
                 .id_salt("field")
                 .show(ui);
+            // Only a typed commit (Enter, Tab, focus loss) alerts; a step, the wheel and a scrub never do.
+            if shown.committed {
+                let typed = shown.edit.value().copied().flatten();
+                let resolution = matches!(which, Dimension::Resolution);
+                alert = SizeAlert::of(unit, resolution, range.clone(), shown.out_of_range.is_some(), typed);
+            }
             if let Some(number) = shown.edit.value().copied().flatten() {
                 match which {
                     Dimension::Width => size.set_width(number),
@@ -484,5 +541,6 @@ impl Kit {
                 };
             }
         });
+        alert
     }
 }

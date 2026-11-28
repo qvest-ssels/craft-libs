@@ -139,6 +139,9 @@ pub struct LinkedSize {
     /// Whether the width shows Columns while the height keeps `unit`. Only ever on with `columns` set.
     width_in_columns: bool,
     typed: Option<Typed>,
+    /// The greatest resolution, in pixels per inch: the end of `PPI_RANGE` unless the dialog takes less
+    /// ([`max_resolution`](Self::max_resolution)).
+    max_ppi: f64,
 }
 
 impl LinkedSize {
@@ -203,14 +206,31 @@ impl LinkedSize {
             columns: None,
             width_in_columns: false,
             typed: None,
+            max_ppi: *PPI_RANGE.end(),
         }
+    }
+
+    /// The greatest resolution the fields take, in pixels per inch, below the end of the default range (30000):
+    /// Photoshop's Image Size takes at most 29999.999. A value that is not a number, or one outside the default range,
+    /// keeps that end. Set it before [`opening_resolution`](Self::opening_resolution), which it limits too.
+    #[must_use]
+    pub fn max_resolution(mut self, pixels_per_inch: f64) -> Self {
+        if PPI_RANGE.contains(&pixels_per_inch) {
+            self.max_ppi = pixels_per_inch;
+        }
+        self
+    }
+
+    /// The resolution clamped to the range the fields take, in pixels per inch.
+    fn clamp_ppi(&self, pixels_per_inch: f64) -> f64 {
+        pixels_per_inch.clamp(*PPI_RANGE.start(), self.max_ppi)
     }
 
     /// The resolution the document opens with, in pixels per inch, limited to `PPI_RANGE`. A value that is not a
     /// number keeps the default.
     pub fn opening_resolution(mut self, pixels_per_inch: f64) -> Self {
         if pixels_per_inch.is_finite() {
-            let ppi = pixels_per_inch.clamp(*PPI_RANGE.start(), *PPI_RANGE.end());
+            let ppi = self.clamp_ppi(pixels_per_inch);
             self.original_ppi = ppi;
             self.ppi = ppi;
         }
@@ -384,7 +404,7 @@ impl LinkedSize {
     /// The values the resolution field takes, in the current resolution unit.
     pub fn resolution_range(&self) -> RangeInclusive<f64> {
         let factor = self.resolution_factor();
-        PPI_RANGE.start() / factor..=PPI_RANGE.end() / factor
+        PPI_RANGE.start() / factor..=self.max_ppi / factor
     }
 
     /// Sets the width as typing `value` in its field does, in the current unit. A value that is not a number is
@@ -407,7 +427,7 @@ impl LinkedSize {
         if !value.is_finite() {
             return;
         }
-        let ppi = (value * self.resolution_factor()).clamp(*PPI_RANGE.start(), *PPI_RANGE.end());
+        let ppi = self.clamp_ppi(value * self.resolution_factor());
         let old = self.ppi;
         if self.resampling && !is_pixel_unit(self.unit) && old > 0.0 {
             self.current.width = clamp_pixels(f64::from(self.current.width) * ppi / old, self.current.width);
@@ -474,7 +494,7 @@ impl LinkedSize {
         self.typed = None;
         if !self.resampling {
             if !is_pixel_unit(self.side_unit(side)) && pixels > 0.0 {
-                self.ppi = (self.ppi * current / pixels).clamp(*PPI_RANGE.start(), *PPI_RANGE.end());
+                self.ppi = self.clamp_ppi(self.ppi * current / pixels);
                 self.current = self.original;
                 self.remember(side, value);
             }
@@ -482,6 +502,8 @@ impl LinkedSize {
         }
         let pixels = if self.relative { original + pixels } else { pixels };
         self.scale(side, pixels);
+        // A side takes whole pixels: 150.5 px makes 151, and the field shows the 151 it holds.
+        let value = if self.side_unit(side) == UnitKind::Pixels { value.round() } else { value };
         self.remember(side, value);
     }
 

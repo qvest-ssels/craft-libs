@@ -39,6 +39,8 @@ pub struct UnitSelectOutput {
     /// A typed number the field clamped to its range, in the pass it committed (the number field's own
     /// `out_of_range`): the app shows the range alert.
     pub out_of_range: Option<RangeAlert>,
+    /// Typed text was committed in the number field in this pass (the number field's own `committed`).
+    pub committed: bool,
 }
 
 impl Deref for UnitSelectOutput {
@@ -91,6 +93,8 @@ pub struct UnitSelect<'a> {
     unit_event: EditEvents<UnitKind>,
     /// The number child's range alert of this pass, kept from `paint` to `finish`.
     out_of_range: Option<RangeAlert>,
+    /// Whether the number child committed typed text this pass, kept from `paint` to `finish`.
+    committed: bool,
 }
 
 impl<'a> UnitSelect<'a> {
@@ -106,6 +110,7 @@ impl<'a> UnitSelect<'a> {
             number_enabled: None,
             unit_event: EditEvents::new(),
             out_of_range: None,
+            committed: false,
         }
         .label(label)
     }
@@ -184,12 +189,13 @@ impl Component for UnitSelect<'_> {
         let number = ui.child("number", place(number_rect), self.number(group.clone(), shown, kind.map(|kind| (kind, &units))));
         cx.adopt(&number, &start, |value, mine| *mine = *value);
         self.out_of_range = number.out_of_range;
+        self.committed = number.committed;
         let select = sized(Select::new(self.select_name(&group), self.unit.reborrowed(), self.units), cx.resolved);
         self.unit_event = ui.child("unit", place(select_rect), select).events;
     }
 
     fn finish(self, cx: Cx<'_, Self>) -> UnitSelectOutput {
-        UnitSelectOutput { edit: cx.edit_response(), unit: self.unit_event, out_of_range: self.out_of_range }
+        UnitSelectOutput { edit: cx.edit_response(), unit: self.unit_event, out_of_range: self.out_of_range, committed: self.committed }
     }
 }
 

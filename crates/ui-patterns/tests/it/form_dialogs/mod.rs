@@ -7,6 +7,7 @@ pub(crate) mod document_layout;
 pub(crate) mod export;
 pub(crate) mod files;
 pub(crate) mod hosted;
+pub(crate) mod image_size_range_alert;
 pub(crate) mod image_unit_order;
 pub(crate) mod list_manager;
 pub(crate) mod long_value;

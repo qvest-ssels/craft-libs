@@ -1,17 +1,20 @@
 //! `ImageSize`: the Image Size dialog.
 
-use super::{Kit, LinkedSize, Resample, SizeForm, SizingOutput, set_size_json, show_form, size_json, size_valid};
+use super::{Kit, LinkedSize, Resample, SizeAlert, SizeForm, SizingOutput, set_size_json, show_form, size_json, size_valid};
 use crate::choice::Checkbox;
 use crate::contract::{Bind, Props as _, Show as _, ShowContainer as _};
-use crate::dialog::{DialogId, DialogResult, DialogStack, FieldRefusal, HeldAnswer, HeldOk, StackDialog, dialog_id};
+use crate::dialog::{Alert, DialogId, DialogResult, DialogStack, FieldRefusal, HeldAnswer, HeldOk, StackDialog, dialog_id};
 use crate::layout_components::Row;
 use crate::pickers::Select;
-use crate::runtime::env::{ColumnSize, Label, UnitKind};
+use crate::runtime::env::{ColumnSize, Env, Label, UnitKind};
 use crate::runtime::{keys, overlay};
 use craft_behavior::PixelSize;
 use craft_keymap::{Chord, Mods};
 use egui::Ui;
 use serde_json::json;
+
+/// The greatest resolution Image Size takes, in pixels per inch, as Photoshop's does.
+const MAX_RESOLUTION: f64 = 29_999.999;
 
 /// What Image Size answers with at OK.
 #[derive(Clone, Debug, PartialEq)]
@@ -71,7 +74,7 @@ impl ImageSizeValues {
     /// The values for a document of `size` pixels, at 72 pixels per inch, in pixels, resampling automatically with
     /// Scale Styles on.
     pub fn new(size: PixelSize) -> Self {
-        ImageSizeValues { size: LinkedSize::new(size), method: Resample::Automatic, scale_styles: true }
+        ImageSizeValues { size: LinkedSize::new(size).max_resolution(MAX_RESOLUTION), method: Resample::Automatic, scale_styles: true }
     }
 
     /// The resolution the document opens with, in pixels per inch.
@@ -182,7 +185,8 @@ impl<'a> ImageSize<'a> {
 
         let words = kit.words();
         let title = words.image_size_title.clone();
-        show_form(
+        let mut range_alert = None;
+        let mut shown = show_form(
             ui,
             title,
             open,
@@ -204,8 +208,8 @@ impl<'a> ImageSize<'a> {
                 kit.readout(ui, &words.image_size, shown, tone);
                 kit.readout(ui, &words.dimensions, kit.dimensions(now), tone);
                 kit.refusal(ui, now);
-                kit.sides(ui, &mut state.size);
-                kit.resolution(ui, &mut state.size);
+                range_alert = kit.sides(ui, &mut state.size).or(range_alert.take());
+                range_alert = kit.resolution(ui, &mut state.size).or(range_alert.take());
 
                 if !ui.is_sizing_pass() && overlay::drawing_top_modal(ui.ctx()) {
                     let owner = ui.scope_id().with("resample-keys");
@@ -243,7 +247,9 @@ impl<'a> ImageSize<'a> {
                 }
             },
             ImageSizeValues::result,
-        )
+        );
+        shown.range_alert = range_alert;
+        shown
     }
 }
 
@@ -268,6 +274,8 @@ pub struct HostedImageSize {
     hold: bool,
     /// The OK the host holds back until it answers `answer_ok`.
     held: HeldAnswer<ImageSizeValues>,
+    /// The range alert of the last value a row did not take as typed, with the scope it is worded in.
+    range_alert: Option<(SizeAlert, Env)>,
     #[cfg(feature = "testing")]
     facts: crate::testing::StoryOutput,
 }
@@ -285,6 +293,7 @@ impl HostedImageSize {
             build: Box::new(build),
             hold: false,
             held: HeldAnswer::new(),
+            range_alert: None,
             #[cfg(feature = "testing")]
             facts: crate::testing::StoryOutput::default(),
         }
@@ -311,6 +320,14 @@ impl HostedImageSize {
     /// The OK filed by a held dialog, once.
     pub fn take_ok(&mut self) -> Option<ImageSizeResult> {
         self.held.take().map(|values| values.result())
+    }
+
+    /// The alert of a value typed in Width, Height or Resolution that the row replaced by the closest value it takes
+    /// (one past the row's range, or a fraction of a pixel), titled Image Size, once: the host opens it. Only rows in
+    /// Pixels, Percent, Inches and pixels per inch alert.
+    pub fn take_range_alert(&mut self) -> Option<Alert<'static>> {
+        let (alert, env) = self.range_alert.take()?;
+        Some(alert.alert(env.words::<super::SizingWords>().image_size_title.clone(), &env))
     }
 
     /// The host's answer to the held OK: `Ok` closes the dialog with the held answer in the next pass; `Err` enables
@@ -414,7 +431,10 @@ impl StackDialog for HostedImageSize {
     fn show(&mut self, ui: &mut Ui, _: &DialogStack) -> Option<DialogResult<ImageSizeResult>> {
         let dialog = (self.build)(Bind::bound(&mut self.values)).opened(Bind::bound(&mut self.open));
         let dialog = if self.hold { dialog.held(&mut self.held) } else { dialog };
-        let shown = dialog.show(ui);
+        let mut shown = dialog.show(ui);
+        if let Some(alert) = shown.range_alert.take() {
+            self.range_alert = Some((alert, Env::of(ui)));
+        }
         #[cfg(feature = "testing")]
         {
             self.facts = crate::contract::Outcome::story_facts(&shown);
