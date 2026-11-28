@@ -13,7 +13,7 @@ use crate::controls::disclosure::Disclosure;
 use crate::list::toggle::{ToggleFace, ToggleState};
 use crate::notices::tone_icon;
 use crate::primitives::{DocText, Draw, IconSpec, PaintShape, RectSide, RuleKind, Span, StrokeWidth, TextRun, Wrap};
-use crate::style::{Flags, GlyphRole, Ink, StateMix, StateSet, StyleColor};
+use crate::style::{Flags, GlyphRole, Ink, State, StateMix, StateSet, StyleColor};
 use craft_behavior::{Flow, IconId, Mixed, PartRef};
 use craft_theme::ControlSize;
 use egui::{CornerRadius, Pos2, Rect, Vec2};
@@ -152,6 +152,11 @@ impl ListRow<'_> {
         }
         for (at, (_, link)) in placed.extras.iter().enumerate() {
             let (Some(slot), Some((linked, _))) = (link, &self.extras[at].link) else { continue };
+            // An unlinked chain shows only while its slot is hovered, pressed or has the keyboard focus: at rest the
+            // slot is empty, and a click on it still links.
+            if !*linked && !shows_unlinked(&cx.part_state(LINK.at(at as u64))) {
+                continue;
+            }
             let id = IconId::new(if *linked { "link" } else { "unlink" });
             let side = Rect::from_center_size(slot.center(), Vec2::splat(style.sizes.icon));
             let color = glyph_ink(cx, LINK.at(at as u64), *linked);
@@ -403,6 +408,12 @@ fn split_field_text(room: Rect, rtl: bool, text_width: f32, gap: f32) -> (Rect, 
     let field = (room.width() - text - gap).max(0.0);
     let flow = Flow::new(room, rtl);
     (flow.span(0.0, field), flow.span(field + gap, text))
+}
+
+/// Whether an unlinked chain glyph in a link slot of state `cell` shows: under the pointer, pressed or with the
+/// keyboard focus on the slot.
+fn shows_unlinked(cell: &StateSet) -> bool {
+    matches!(cell.state, State::Hover | State::Pressed) || cell.flags.contains(Flags::FOCUS_VISIBLE)
 }
 
 /// The ink of a toggle or link glyph that is `on` or not: its own part's hover and press, over the row's selection and

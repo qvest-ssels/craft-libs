@@ -2304,3 +2304,44 @@ fn tight_thumbnail_rows_stand_lower_and_indent_less() {
     assert!(tight_height < roomy_height, "the tight row ({tight_height}) is lower than the roomy one ({roomy_height})");
     assert!(0.0 < tight_indent && tight_indent < roomy_indent, "a level indents less ({tight_indent}) than an icon slot ({roomy_indent})");
 }
+
+/// storytold/photocraft#16788: an unlinked chain between a row's thumbnails shows only while its slot is hovered; at
+/// rest the slot is empty, and a click on it still asks to link. A linked chain shows at rest.
+#[trial]
+fn an_unlinked_chain_shows_only_on_hover_and_its_empty_slot_still_links() {
+    use craft_ui::list::ThumbSize;
+    let linked = Rc::new(std::cell::Cell::new(false));
+    let seen = Rc::new(RefCell::new(Vec::new()));
+    let (held, state) = (seen.clone(), linked.clone());
+    let mut fixture = Fixture::new(move |ui| {
+        let keys = [0_usize];
+        let source = keyed(&keys, |key: &usize| *key).with_text(|_| std::borrow::Cow::Borrowed("Layer 1"));
+        let link = state.get();
+        let out = List::new("Layers").show_items(ui, &source, &mut |_, _| {
+            ListRow::new("Layer 1")
+                .thumbnails_only()
+                .thumb(ThumbSize::Medium, |_, _| {})
+                .extra_thumb(|_, _| {})
+                .thumb_link(link, "Link the mask to {row}")
+        });
+        held.borrow_mut().extend(out.events);
+    });
+    fixture.room(Vec2::new(300.0, 200.0));
+    fixture.settle();
+    let slot = fixture.by_label("Link the mask to Layer 1").expect("the chain slot is a named part").center();
+    let away = fixture.by_label("Layer 1").expect("the row").rect.left_top() + Vec2::new(2.0, 2.0);
+    fixture.frame(vec![craft_ui::testing::pointer::moved(away)]).settle();
+    assert_eq!(drawn_at(&fixture.frame_shapes(), slot), 0, "an unlinked chain's slot is empty at rest");
+    fixture.frame(vec![craft_ui::testing::pointer::moved(slot)]).settle();
+    assert!(drawn_at(&fixture.frame_shapes(), slot) > 0, "the hovered slot shows the unlinked chain");
+    fixture.frame(vec![craft_ui::testing::pointer::moved(away)]).settle();
+    assert_eq!(drawn_at(&fixture.frame_shapes(), slot), 0, "and leaves it again");
+
+    fixture.click_at(slot).settle();
+    let asked = seen.borrow().iter().any(|event| matches!(event, CollectionEvent::Item(0, RowEvent::LinkToggled { thumb: 0, linked: true, .. })));
+    assert!(asked, "a click on the empty slot asks to link: {:?}", seen.borrow());
+
+    linked.set(true);
+    fixture.frame(vec![craft_ui::testing::pointer::moved(away)]).settle();
+    assert!(drawn_at(&fixture.frame_shapes(), slot) > 0, "a linked chain shows at rest");
+}
