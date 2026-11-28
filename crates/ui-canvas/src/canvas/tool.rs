@@ -455,6 +455,13 @@ impl<'a> ToolContext<'a> {
         Point::new(self.snap_along(Axis::Y, point.x), self.snap_along(Axis::X, point.y))
     }
 
+    /// [`snap`](Self::snap) to the targets of a kind in `kinds` only: a drawn marquee or shape corner that leaves out
+    /// other layers' edges. Unlike [`snap_of`](Self::snap_of), a target's span does not limit it, as in `snap`.
+    pub fn snap_to(&self, point: Point, kinds: SnapKinds) -> Point {
+        let along = |axis, position| self.snap.map_or(position, |snap| snap.apply_of(axis, position, self.mods, kinds));
+        Point::new(along(Axis::Y, point.x), along(Axis::X, point.y))
+    }
+
     /// [`snap`](Self::snap) to the targets of a kind in `kinds` only, with no lines: a click that selects at the point
     /// leaves out the selection it replaces.
     pub fn snap_of(&self, point: Point, kinds: SnapKinds) -> Point {

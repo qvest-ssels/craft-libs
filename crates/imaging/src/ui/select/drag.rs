@@ -181,10 +181,41 @@ impl InsideDrag {
     }
 }
 
-/// The offset that snaps the moved selection's bounds `rect` to the canvas's targets: every kind but the selection's own
-/// edges, which move with it.
-pub(super) fn moved_selection_snap(cx: &mut craft_ui::canvas::ToolContext<'_>, rect: kurbo::Rect) -> Vec2 {
-    cx.snap_rect_of(rect, SnapKinds::ALL.without(SnapKind::Selection))
+/// The View > Snap To targets a selection tool's gestures snap to: the corners of a drawn marquee, and the bounds of a
+/// dragged selection. A tool takes them with its `snapping(..)` setter; [`SelectSnap::ALL`] by default.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct SelectSnap {
+    /// The kinds a drawn marquee's corners snap to (the press and the pointer while it sizes the marquee).
+    pub draw: SnapKinds,
+    /// The kinds a dragged selection's bounds snap to. The selection's own edges never take part: they move with it.
+    pub moved: SnapKinds,
+}
+
+impl SelectSnap {
+    /// Every kind for both gestures (the selection's own edges aside for a drag): the default.
+    pub const ALL: SelectSnap = SelectSnap { draw: SnapKinds::ALL, moved: SnapKinds::ALL };
+
+    /// Photoshop's: a marquee's corners snap to neither other layers' edges and centres nor the document's edges, and
+    /// a dragged selection snaps to no layer's edges or centre (it still snaps to the document's edges). Guides, the
+    /// grid, the document's centre and the selection keep snapping a marquee's corners.
+    pub const PHOTOSHOP: SelectSnap = SelectSnap {
+        draw: SnapKinds::ALL.without(SnapKind::LayerEdge).without(SnapKind::LayerCenter).without(SnapKind::Bounds),
+        moved: SnapKinds::ALL.without(SnapKind::LayerEdge).without(SnapKind::LayerCenter),
+    };
+}
+
+impl Default for SelectSnap {
+    /// [`SelectSnap::ALL`].
+    fn default() -> Self {
+        SelectSnap::ALL
+    }
+}
+
+/// The offset that snaps the moved selection's bounds `rect` to the canvas's targets of a kind in `kinds` but the
+/// selection's own edges, which move with it.
+pub(super) fn moved_selection_snap(cx: &mut craft_ui::canvas::ToolContext<'_>, rect: kurbo::Rect, kinds: SnapKinds) -> Vec2 {
+    cx.snap_rect_of(rect, kinds.without(SnapKind::Selection))
 }
 
 /// The value's offset plus the snap of the press `bounds` moved by it; the offset itself without bounds. A value that

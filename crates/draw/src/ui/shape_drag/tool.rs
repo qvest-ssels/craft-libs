@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use craft_behavior::geometry::axis_or_diagonal;
+use craft_behavior::geometry::{SnapKind, SnapKinds, axis_or_diagonal};
 use craft_behavior::{CancelReason, Cursor, CursorIcon, EditEvent, GestureId, Mixed};
 use craft_keymap::{Key, Mods};
 use craft_ui::canvas::{CanvasTool, ToolAccess, ToolAction, ToolContext, ToolKey, ToolPath, ToolPointer};
@@ -55,6 +55,8 @@ const OUTLINE_TOLERANCE: f32 = 0.25;
 pub struct ShapeDragTool {
     options: ShapeDragOptions,
     rules: ShapeDragRules,
+    /// What the press and the pointer snap to.
+    snap: SnapKinds,
     preview: bool,
     events: Vec<ShapeDragEvent>,
     drag: Option<Drag>,
@@ -67,6 +69,7 @@ impl Default for ShapeDragTool {
         ShapeDragTool {
             options: ShapeDragOptions::default(),
             rules: ShapeDragRules::default(),
+            snap: SnapKinds::ALL,
             preview: true,
             events: Vec::new(),
             drag: None,
@@ -117,6 +120,17 @@ impl ShapeDragTool {
     /// Which product's rules the drag follows; Photoshop's by default.
     pub fn rules(&mut self, rules: ShapeDragRules) -> &mut Self {
         self.rules = rules;
+        self
+    }
+
+    /// The View > Snap To kinds Photoshop's shape tools snap a drawn shape to: every kind but other layers' edges and
+    /// centres.
+    pub const PHOTOSHOP_SNAP: SnapKinds = SnapKinds::ALL.without(SnapKind::LayerEdge).without(SnapKind::LayerCenter);
+
+    /// The View > Snap To kinds the press and the pointer snap to; every kind by default,
+    /// [`PHOTOSHOP_SNAP`](Self::PHOTOSHOP_SNAP) for Photoshop's.
+    pub fn snapping(&mut self, kinds: SnapKinds) -> &mut Self {
+        self.snap = kinds;
         self
     }
 
@@ -209,7 +223,7 @@ impl ShapeDragTool {
             self.drag = Some(drag);
             return;
         };
-        let at = cx.snap(space.view.to_doc(pos));
+        let at = cx.snap_to(space.view.to_doc(pos), self.snap);
         if !at.is_finite() {
             self.drag = Some(drag);
             return;
@@ -274,7 +288,7 @@ impl CanvasTool for ShapeDragTool {
         // `shape_dialog::is_click` opens the dialog).
         let Some(space) = cx.space() else { return ToolAction::Ignored };
         let options = self.options;
-        let origin = cx.snap(space.view.to_doc(pointer.pos));
+        let origin = cx.snap_to(space.view.to_doc(pointer.pos), self.snap);
         // pc: crates/ui-egui/src/dialogs/shape_dialog.rs `is_tool_click` (#13340).
         let click_slop = if options.kind == ShapeKind::Rectangle && options.mode == VectorMode::Shape { 1.0 } else { cx.slop };
         self.next = self.next.next();

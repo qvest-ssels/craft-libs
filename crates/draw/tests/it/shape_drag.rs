@@ -1,5 +1,7 @@
 //! The Shape tools and the Create Shape dialog. The view maps one document unit to one screen point.
 
+use craft_behavior::Axis;
+use craft_behavior::geometry::{SnapKind, SnapKinds, SnapOptions, SnapTarget, SnapTargets};
 use craft_behavior::kurbo::{ParamCurve as _, Point, Rect, Vec2};
 use craft_behavior::{CanvasView, EditEvent};
 use craft_draw::geometry::shape::ShapeGeometry;
@@ -7,6 +9,7 @@ use craft_draw::ui::shape::VectorMode;
 use craft_draw::ui::shape_drag::{
     BoxConstraint, BoxConstraints, CreateShapeDialog, CreateShapeOptions, CreatedShape, ShapeDragEvent, ShapeDragOptions, ShapeDragTool, ShapeKind,
 };
+use craft_ui::canvas::Snap;
 use craft_ui::contract::Role;
 use craft_ui::dialog::{DialogHost, DialogId, DialogResult};
 use craft_ui::testing::{Fixture, ToolFixture, trial};
@@ -37,6 +40,16 @@ impl Shapes {
         let mut tool = ShapeDragTool::new();
         tool.options(options);
         Shapes { fixture: ToolFixture::with_view("Shape", tool, room_view, |_, _| {}), log: Vec::new() }
+    }
+
+    /// [`new`](Self::new) on a canvas that snaps to `targets`, the tool snapping to `kinds`.
+    fn snapped(options: ShapeDragOptions, targets: SnapTargets, kinds: SnapKinds) -> Self {
+        let mut tool = ShapeDragTool::new();
+        tool.options(options).snapping(kinds);
+        let snap = Snap::new(std::sync::Arc::new(targets), SnapOptions::default());
+        let mut fixture = ToolFixture::with_snap("Shape", tool, room_view, snap, |_, _| {});
+        fixture.fixture().frame(Vec::new());
+        Shapes { fixture, log: Vec::new() }
     }
 
     fn sync(&mut self) {
@@ -492,4 +505,31 @@ fn create_triangle_takes_one_corner_radius() {
     fixture.key(Key::Tab, Modifiers::NONE).settle();
     let radii = host.borrow().get::<CreateShapeDialog>().map(|dialog| dialog.options().radii);
     assert_eq!(radii, Some([30.0; 4]), "the typed radius is the triangle's");
+}
+
+// storytold/photocraft#16864: Photoshop's Rectangle tool does not pull a drawn shape's corners onto another layer's
+// edges or centre, and still onto a guide. A layer spans x 100 to 300 (centre 200), a guide runs along y = 190. Every
+// kind (the default) pulls 104 and 298 onto the edges.
+#[trial]
+fn photoshop_s_shape_snap_leaves_out_other_layers_edges_and_centres() {
+    let targets = || {
+        let mut targets = SnapTargets::new();
+        for (x, kind) in [(100.0, SnapKind::LayerEdge), (200.0, SnapKind::LayerCenter), (300.0, SnapKind::LayerEdge)] {
+            targets.add(SnapTarget::new(Axis::Y, x, kind));
+        }
+        targets.add(SnapTarget::new(Axis::X, 190.0, SnapKind::Guide));
+        targets
+    };
+    let options = ShapeDragOptions::new(ShapeKind::Rectangle);
+
+    let mut shapes = Shapes::snapped(options, targets(), ShapeDragTool::PHOTOSHOP_SNAP);
+    shapes.drag(Point::new(104.0, 100.0), Point::new(298.0, 187.0), Modifiers::NONE);
+    assert_eq!(shapes.committed_box(), Some(Rect::new(104.0, 100.0, 298.0, 190.0)), "the layer's edges stay apart, the guide snaps");
+    shapes.forget();
+    shapes.drag(Point::new(104.0, 100.0), Point::new(203.0, 150.0), Modifiers::NONE);
+    assert_eq!(shapes.committed_box(), Some(Rect::new(104.0, 100.0, 203.0, 150.0)), "the layer's centre stays apart");
+
+    let mut shapes = Shapes::snapped(options, targets(), SnapKinds::ALL);
+    shapes.drag(Point::new(104.0, 100.0), Point::new(298.0, 187.0), Modifiers::NONE);
+    assert_eq!(shapes.committed_box(), Some(Rect::new(100.0, 100.0, 300.0, 190.0)), "every kind pulls the corners onto the edges");
 }

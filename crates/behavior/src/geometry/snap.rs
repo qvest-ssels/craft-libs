@@ -66,8 +66,8 @@ impl SnapKinds {
         SnapKinds(Self::bit(kind))
     }
 
-    /// This set without `kind`.
-    pub fn without(self, kind: SnapKind) -> Self {
+    /// This set without `kind`; `const`, so a tool's rules can name their set (`SnapKinds::ALL.without(..)`).
+    pub const fn without(self, kind: SnapKind) -> Self {
         SnapKinds(self.0 & !Self::bit(kind))
     }
 

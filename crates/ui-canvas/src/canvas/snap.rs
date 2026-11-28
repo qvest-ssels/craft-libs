@@ -73,8 +73,14 @@ impl Snap {
 
     /// `position` across a guide running `along`, snapped.
     pub fn apply(&self, along: Axis, position: f64, mods: Mods) -> f64 {
+        self.apply_of(along, position, mods, craft_behavior::geometry::SnapKinds::ALL)
+    }
+
+    /// [`apply`](Self::apply) to the targets of a kind in `kinds` only. As in `apply`, a target's span does not limit
+    /// it.
+    pub fn apply_of(&self, along: Axis, position: f64, mods: Mods, kinds: craft_behavior::geometry::SnapKinds) -> f64 {
         let snapped = match self.reach(mods, false) {
-            Some(tolerance) => self.targets.nearest(along, position, tolerance).map_or(position, |target| target.position),
+            Some(tolerance) => self.targets.nearest_of(along, position, tolerance, kinds).map_or(position, |target| target.position),
             None => position,
         };
         self.rounded(snapped)

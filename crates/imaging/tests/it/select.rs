@@ -5,7 +5,7 @@ use craft_behavior::geometry::{Constraint, SelectionOperation, SnapKind, SnapOpt
 use craft_behavior::{Axis, CancelReason, EditEvent, PixelSize, PointerButton};
 use craft_imaging::ui::select::{
     DragKind, EdgeSearch, EdgeTracer, LassoTool, MagneticLassoTool, MagneticSettings, MarqueeKind, MarqueeTool, PolygonLassoTool, SelectEvent,
-    SelectPhase, SelectToolPass, SelectionDrag, SelectionProbe, SelectionShape,
+    SelectPhase, SelectSnap, SelectToolPass, SelectionDrag, SelectionProbe, SelectionShape,
 };
 use craft_keymap::{Mods, Platform};
 use craft_ui::canvas::{CanvasTool, Snap, ToolAccess, ToolContext, ToolHost, ToolInput, ToolKey, ToolPath, ToolPointer};
@@ -216,6 +216,34 @@ where
     rig.fixture().os(Platform::Mac);
     rig.fixture().frame(Vec::new());
     rig
+}
+
+/// [`rig`] on a canvas that snaps to `targets`, on macOS.
+fn snapped_to<T: Reports + 'static>(label: &'static str, tool: T, probe: Fake, targets: SnapTargets) -> Rig<T>
+where
+    for<'a> SelectToolPass<'a, T>: CanvasTool,
+{
+    let snap = Snap::new(Arc::new(targets), SnapOptions::default());
+    let mut rig = ToolFixture::with_snap(label, Owned::new(tool, probe), same_points, snap, |_, _| {});
+    rig.fixture().os(Platform::Mac);
+    rig.fixture().frame(Vec::new());
+    rig
+}
+
+/// Vertical snap lines of each kind: a layer's edges at x = 100 and 160 and its centre at 130, the document's edge at
+/// 200 and a guide at 250.
+fn kinds_apart() -> SnapTargets {
+    let mut targets = SnapTargets::new();
+    for (x, kind) in [
+        (100.0, SnapKind::LayerEdge),
+        (130.0, SnapKind::LayerCenter),
+        (160.0, SnapKind::LayerEdge),
+        (200.0, SnapKind::Bounds),
+        (250.0, SnapKind::Guide),
+    ] {
+        targets.add(SnapTarget::new(Axis::Y, x, kind));
+    }
+    targets
 }
 
 fn at(point: (f64, f64)) -> Pos2 {
@@ -498,6 +526,68 @@ fn a_marquee_corner_and_a_dragged_selection_snap_to_a_guide() {
     click(&mut rig, (95.5, 45.0), NONE);
     let events = rig.tool_mut().events();
     assert_eq!(events[2..], [commit((100.0, 0.0, 101.0, 300.0), SelectionOperation::New)], "the click selects the guide's column");
+}
+
+// storytold/photocraft#16862: under Photoshop's rules a marquee's corners snap to no layer edge or centre and not to the
+// document's edge, and still to a guide. Every kind (the default) pulls them onto all of them.
+#[trial]
+fn photoshop_s_marquee_corners_leave_out_layers_and_the_document_edge() {
+    let mut marquee = MarqueeTool::new(MarqueeKind::Rectangle);
+    marquee.snapping(SelectSnap::PHOTOSHOP);
+    let mut rig = snapped_to("Marquee", marquee, Fake::empty(), kinds_apart());
+    let events = stroke(&mut rig, (104.0, 20.0), (157.0, 60.0), NONE, NONE);
+    assert_eq!(events, [commit((104.0, 20.0, 157.0, 60.0), SelectionOperation::New)], "the layer's edges stay apart");
+    let events = stroke(&mut rig, (104.0, 20.0), (127.0, 60.0), NONE, NONE);
+    assert_eq!(events, [commit((104.0, 20.0, 127.0, 60.0), SelectionOperation::New)], "the layer's centre stays apart");
+    let events = stroke(&mut rig, (104.0, 20.0), (197.0, 60.0), NONE, NONE);
+    assert_eq!(events, [commit((104.0, 20.0, 197.0, 60.0), SelectionOperation::New)], "the document's edge stays apart");
+    let events = stroke(&mut rig, (104.0, 20.0), (247.0, 60.0), NONE, NONE);
+    assert_eq!(events, [commit((104.0, 20.0, 250.0, 60.0), SelectionOperation::New)], "the guide snaps");
+
+    let mut rig = snapped_to("Marquee", MarqueeTool::new(MarqueeKind::Rectangle), Fake::empty(), kinds_apart());
+    let events = stroke(&mut rig, (104.0, 20.0), (157.0, 60.0), NONE, NONE);
+    assert_eq!(events, [commit((100.0, 20.0, 160.0, 60.0), SelectionOperation::New)], "every kind pulls onto the edges");
+    let events = stroke(&mut rig, (104.0, 20.0), (197.0, 60.0), NONE, NONE);
+    assert_eq!(events, [commit((100.0, 20.0, 200.0, 60.0), SelectionOperation::New)], "and onto the document's edge");
+}
+
+// storytold/photocraft#16863: under Photoshop's rules a dragged selection's bounds snap to no layer edge or centre, and
+// still to the document's edge, for the Marquee, the Lasso and the Polygonal Lasso (Cmd: its plain press does not drag).
+// The selection is 30 wide from x = 30.
+#[trial]
+fn photoshop_s_selection_drag_leaves_out_layers_but_not_the_document_edge() {
+    fn drags<T: Reports + 'static>(mut rig: Rig<T>, mods: Mods, name: &str, moves: &[(f64, &str)])
+    where
+        for<'a> SelectToolPass<'a, T>: CanvasTool,
+    {
+        let modifiers = if mods.cmd { Modifiers::MAC_CMD } else { Modifiers::NONE };
+        for (to, tag) in moves {
+            hold(&mut rig, modifiers);
+            down(&mut rig, (35.0, 45.0), mods);
+            drag_to(&mut rig, (*to, 45.0), mods);
+            up(&mut rig, (*to, 45.0), mods);
+            hold(&mut rig, Modifiers::NONE);
+            let events = rig.tool_mut().events();
+            assert_eq!(tags(&events).last().map(String::as_str), Some(*tag), "{name} to {to}: {events:?}");
+        }
+    }
+    let selected = || Fake::selected(Rect::new(30.0, 30.0, 60.0, 60.0));
+    // Left edge 4 right of the layer's edge at 100; centre 3 left of its centre at 130; right edge 3 left of the
+    // document's edge at 200.
+    let photoshop = [(109.0, "commit 74,0"), (117.0, "commit 82,0"), (172.0, "commit 140,0")];
+    let every = [(109.0, "commit 70,0"), (117.0, "commit 85,0"), (172.0, "commit 140,0")];
+
+    let mut marquee = MarqueeTool::new(MarqueeKind::Rectangle);
+    marquee.snapping(SelectSnap::PHOTOSHOP);
+    drags(snapped_to("Marquee", marquee, selected(), kinds_apart()), NONE, "Marquee", &photoshop);
+    let mut lasso = LassoTool::new();
+    lasso.snapping(SelectSnap::PHOTOSHOP);
+    drags(snapped_to("Lasso", lasso, selected(), kinds_apart()), NONE, "Lasso", &photoshop);
+    let mut polygon = PolygonLassoTool::new();
+    polygon.snapping(SelectSnap::PHOTOSHOP);
+    drags(snapped_to("Polygonal Lasso", polygon, selected(), kinds_apart()), Mods::CMD, "Polygonal Lasso", &photoshop);
+
+    drags(snapped_to("Marquee", MarqueeTool::new(MarqueeKind::Rectangle), selected(), kinds_apart()), NONE, "default Marquee", &every);
 }
 
 // Inside the click distance a selection drag still moves: one that snapping pulls back to its start (its edge on the

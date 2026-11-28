@@ -1065,7 +1065,7 @@ Box geometry of transform boxes: where the box goes when a part of it is dragged
 - `craft_behavior::geometry::snap::SnapKinds`: `pub struct SnapKinds`. A set of [`SnapKind`]s, a bit per kind: the kind filter a gesture passes to its snapping.
   - `pub const ALL: SnapKinds`. Every kind.
   - `pub const fn only(kind: SnapKind) -> Self`. The set of `kind` alone.
-  - `pub fn without(self, kind: SnapKind) -> Self`. This set without `kind`.
+  - `pub const fn without(self, kind: SnapKind) -> Self`. This set without `kind`; `const`, so a tool's rules can name their set (`SnapKinds::ALL.without(..)`).
   - `pub fn contains(self, kind: SnapKind) -> bool`. Whether `kind` is in this set.
 - `craft_behavior::geometry::snap::SnapLine`: `pub struct SnapLine { pub along: Axis, pub position: f64, pub kind: SnapKind, pub span: Option<(f64, f64)> }`. The line the UI draws for a snap that happened.
 - `craft_behavior::geometry::snap::SnapOptions`: `pub struct SnapOptions { pub on: bool, pub guides: bool, pub grid: bool, pub layers: bool, pub document_bounds: bool, pub selection: bool, pub smart_guides: bool, pub suspend: SnapSuspend }`. View › Snap To and View › Show › Smart Guides, as the app stores them.

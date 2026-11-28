@@ -11,7 +11,7 @@ use craft_ui::primitives::Draw;
 use egui::Pos2;
 use kurbo::{Point, Rect, Vec2};
 
-use super::drag::{InsideDrag, PressRule, cursor_over, drag_kind, moved_selection_snap};
+use super::drag::{InsideDrag, PressRule, SelectSnap, cursor_over, drag_kind, moved_selection_snap};
 use super::{Place, Report, SelectEvent, SelectPhase, SelectToolPass, SelectWords, SelectionProbe, SelectionShape};
 
 /// The points that approximate an ellipse's ants.
@@ -73,7 +73,7 @@ struct MarqueePress {
 /// - A drag sizes the marquee from the press: [`Constraint`] (Normal, Fixed Ratio, Fixed Size) from
 ///   [`constraint`](Self::constraint), Shift square (circle), Alt from the centre. With a selection, Shift and Alt
 ///   held at the press are the operation and count only when pressed again after the press; with nothing selected
-///   they square and centre from the first move. The corner snaps to View > Snap To targets. Space held moves the
+///   they square and centre from the first move. The corner snaps to View > Snap To targets ([`snapping`](Self::snapping) picks the kinds). Space held moves the
 ///   whole marquee, whose box snaps. The rectangle is on whole pixels, exactly as the release commits it; the readout
 ///   beside the pointer shows W and H.
 /// - A release without a drag, or with no area, is a click: [`SelectEvent::Deselect`]. With Fixed Size a click
@@ -99,6 +99,8 @@ pub struct MarqueeTool {
     /// With `inside`, for the Single Row and Single Column Marquees.
     line: Option<LinePress>,
     report: Report,
+    /// What the marquee's corners and a dragged selection snap to.
+    snap: SelectSnap,
 }
 
 impl MarqueeTool {
@@ -130,6 +132,14 @@ impl MarqueeTool {
     /// The options bar's Style for drags from now on.
     pub fn constraint(&mut self, constraint: Constraint) -> &mut Self {
         self.constraint = constraint;
+        self
+    }
+
+    /// The targets the marquee's corners ([`SelectSnap::draw`]) and a dragged selection ([`SelectSnap::moved`]) snap
+    /// to; every kind by default, [`SelectSnap::PHOTOSHOP`] for Photoshop's. A marquee moved with Space held and a
+    /// Single Row or Column click snap as before.
+    pub fn snapping(&mut self, snap: SelectSnap) -> &mut Self {
+        self.snap = snap;
         self
     }
 
@@ -191,7 +201,7 @@ impl MarqueeTool {
     fn follow(&mut self, pointer: &ToolPointer, raw: Point, cx: &mut ToolContext<'_>) {
         let (constraint, kind) = (self.constraint, self.kind);
         let space = cx.held(Key::Space) && !kind.is_line();
-        let at = if space { raw } else { cx.snap(raw) };
+        let at = if space { raw } else { cx.snap_to(raw, self.snap.draw) };
         let Some(press) = self.press.as_mut() else { return };
         press.gesture.follow(Some(pointer.pos), pointer.mods);
         press.last = at;
@@ -292,7 +302,7 @@ impl CanvasTool for SelectToolPass<'_, MarqueeTool> {
         if pointer.mods.cmd {
             return ToolAction::Ignored;
         }
-        let at = cx.snap(raw);
+        let at = cx.snap_to(raw, tool.snap.draw);
         // With a selection the press modifiers pick the operation and must be pressed again to square or centre;
         // with nothing selected they square and centre from the first move.
         let held = if probe.has_selection() { pointer.mods } else { Mods::NONE };
@@ -320,8 +330,9 @@ impl CanvasTool for SelectToolPass<'_, MarqueeTool> {
         let tool = &mut *self.tool;
         let Some(place) = Place::of(cx) else { return };
         let raw = place.doc(pointer.pos);
+        let moved = tool.snap.moved;
         if let Some(inside) = tool.inside.as_mut() {
-            if let Some(event) = inside.drag(raw, pointer.mods, place.zoom(), &mut |rect| moved_selection_snap(cx, rect)) {
+            if let Some(event) = inside.drag(raw, pointer.mods, place.zoom(), &mut |rect| moved_selection_snap(cx, rect, moved)) {
                 tool.report.push(event);
             }
             return;
@@ -339,10 +350,11 @@ impl CanvasTool for SelectToolPass<'_, MarqueeTool> {
         let tool = &mut *self.tool;
         let Some(place) = Place::of(cx) else { return };
         let raw = place.doc(pointer.pos);
+        let moved = tool.snap.moved;
         if let Some(inside) = tool.inside.take() {
             let line = tool.line.take();
             let unmoved = inside.clone();
-            let event = inside.end(raw, pointer.mods, place.zoom(), &mut |rect| moved_selection_snap(cx, rect));
+            let event = inside.end(raw, pointer.mods, place.zoom(), &mut |rect| moved_selection_snap(cx, rect, moved));
             let still = matches!(&event, SelectEvent::DragSelection(EditEvent::Commit { after, .. }) if after.delta == [0, 0]);
             // The click selects the line at the press snapped as a point, not to the selection it replaces (on a
             // one-pixel line its edges would pick the line beside it).

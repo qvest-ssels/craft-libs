@@ -33,6 +33,7 @@
 //! ```
 //!
 //! Every tool has the setter `operation(..)`, and the marquee `kind(..)` and `constraint(..)`; each returns the tool.
+//! The Marquee, Lasso and Polygonal Lasso also take `snapping(..)`, the [`SelectSnap`] targets their gestures snap to.
 //! The Polygonal Lasso takes the secondary button while its outline is open and retracts the last vertex on it, so
 //! the app needs no call for the right click.
 //!
@@ -59,7 +60,7 @@ mod polygon;
 pub(crate) mod stories;
 
 pub mod operations;
-pub use drag::{InsideDrag, PressRule, cursor_over, drag_kind};
+pub use drag::{InsideDrag, PressRule, SelectSnap, cursor_over, drag_kind};
 pub use lasso::{LassoTool, paint_outline};
 pub use magnetic::{EdgeSearch, EdgeTracer, MagneticLassoTool, MagneticOutlineView, MagneticSettings};
 pub use marquee::{MarqueeKind, MarqueeTool};

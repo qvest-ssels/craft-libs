@@ -6,7 +6,7 @@ use craft_keymap::Mods;
 use craft_ui::canvas::{CanvasTool, ToolAccess, ToolAction, ToolClaims, ToolContext, ToolKey, ToolPath, ToolPointer};
 use craft_ui::primitives::{Draw, ToolIcon};
 
-use super::drag::{InsideDrag, PressRule, drag_kind, moved_selection_snap};
+use super::drag::{InsideDrag, PressRule, SelectSnap, drag_kind, moved_selection_snap};
 use super::lasso::{LassoCursor, apply, begin_inside, cursor, draft_key, outline_access, paint_outline, phase, reach, sample};
 use super::{Place, Report, SelectEvent, SelectPhase, SelectToolPass, SelectionProbe};
 
@@ -34,6 +34,8 @@ pub struct PolygonLassoTool {
     mods: Mods,
     inside: Option<InsideDrag>,
     report: Report,
+    /// What a dragged selection snaps to.
+    snap: SelectSnap,
 }
 
 impl Default for PolygonLassoTool {
@@ -53,12 +55,20 @@ impl PolygonLassoTool {
             mods: Mods::NONE,
             inside: None,
             report: Report::default(),
+            snap: SelectSnap::ALL,
         }
     }
 
     /// The options bar's operation for outlines begun from now on.
     pub fn operation(&mut self, bar: SelectionOperation) -> &mut Self {
         self.bar = bar;
+        self
+    }
+
+    /// The targets a dragged selection snaps to ([`SelectSnap::moved`]; the tool draws no snapped corners); every kind
+    /// by default, [`SelectSnap::PHOTOSHOP`] for Photoshop's.
+    pub fn snapping(&mut self, snap: SelectSnap) -> &mut Self {
+        self.snap = snap;
         self
     }
 
@@ -159,8 +169,9 @@ impl CanvasTool for SelectToolPass<'_, PolygonLassoTool> {
     fn drag(&mut self, pointer: &ToolPointer, cx: &mut ToolContext<'_>) {
         let (tool, probe) = (&mut *self.tool, self.probe);
         let Some(place) = Place::of(cx) else { return };
+        let moved = tool.snap.moved;
         if let Some(inside) = tool.inside.as_mut() {
-            if let Some(event) = inside.drag(place.doc(pointer.pos), pointer.mods, place.zoom(), &mut |rect| moved_selection_snap(cx, rect)) {
+            if let Some(event) = inside.drag(place.doc(pointer.pos), pointer.mods, place.zoom(), &mut |rect| moved_selection_snap(cx, rect, moved)) {
                 tool.report.push(event);
             }
             return;
@@ -173,8 +184,9 @@ impl CanvasTool for SelectToolPass<'_, PolygonLassoTool> {
     fn release(&mut self, pointer: &ToolPointer, cx: &mut ToolContext<'_>) {
         let (tool, probe) = (&mut *self.tool, self.probe);
         let Some(place) = Place::of(cx) else { return };
+        let moved = tool.snap.moved;
         if let Some(inside) = tool.inside.take() {
-            tool.report.push(inside.end(place.doc(pointer.pos), pointer.mods, place.zoom(), &mut |rect| moved_selection_snap(cx, rect)));
+            tool.report.push(inside.end(place.doc(pointer.pos), pointer.mods, place.zoom(), &mut |rect| moved_selection_snap(cx, rect, moved)));
             return;
         }
         let event = tool.draft.release(sample(pointer, &place));
