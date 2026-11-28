@@ -75,7 +75,7 @@ fn tile_lays_floating_windows_out_in_the_grid_and_keeps_them_floating() {
     }
 }
 
-/// With a document docked, or a single floating window, Tile docks the documents as before.
+/// With a document docked, a single floating window or a floating window with tabs, Tile docks the documents as before.
 #[trial]
 fn tile_docks_a_mix_of_docked_and_floating_documents_as_before() {
     let space = ArrangeSpace::new(AREA, Vec2::new(400.0, 300.0), 24.0, Some(1));
@@ -89,4 +89,11 @@ fn tile_docks_a_mix_of_docked_and_floating_documents_as_before() {
     single.floating = vec![(DocumentGroup::new(0, vec![1]), Rect::from_min_size(Pos2::new(50.0, 80.0), Vec2::new(300.0, 200.0)))];
     arrange(&mut single, ArrangeCommands::Tile, &space);
     assert!(single.floating.is_empty(), "a single floating window is docked: {:?}", single.floating);
+
+    let mut tabbed = floating_six();
+    tabbed.floating.truncate(2);
+    tabbed.floating[0].0.documents.push(3);
+    arrange(&mut tabbed, ArrangeCommands::Tile, &space);
+    assert!(tabbed.floating.is_empty(), "a floating window with tabs docks them all: {:?}", tabbed.floating);
+    assert_eq!(tabbed.docked.len(), 3, "each document gets its own cell");
 }

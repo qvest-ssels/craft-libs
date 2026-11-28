@@ -220,12 +220,12 @@ pub fn arrange<D: Clone + Eq + Hash>(windows: &mut DocumentWindows<D>, command: 
     Arranged::Windows
 }
 
-/// Tile while every document is in a floating window (two or more windows): the windows stay floating and each takes
-/// one of Tile's cells over the document area, in the order of `floating` except the window of the `active` document,
-/// which takes the last cell (bottom right with six). `false`, changing nothing, while a document is docked or with
-/// fewer than two windows: Tile then docks them as before.
+/// Tile while every document is alone in its own floating window (two or more windows): the windows stay floating and
+/// each takes one of Tile's cells over the document area, in the order of `floating` except the window of the `active`
+/// document, which takes the last cell (bottom right with six). `false`, changing nothing, while a document is docked,
+/// a floating window holds tabs, or there are fewer than two windows: Tile then docks them as before.
 fn tile_floating<D: Eq>(windows: &mut DocumentWindows<D>, area: Rect, active: Option<&D>) -> bool {
-    if windows.docked.iter().any(|group| !group.documents.is_empty()) {
+    if windows.docked.iter().any(|group| !group.documents.is_empty()) || windows.floating.iter().any(|(group, _)| group.documents.len() != 1) {
         return false;
     }
     let Some(mut cells) = arrange_rects(Arrangement::Tile, area, windows.floating.len()) else { return false };
