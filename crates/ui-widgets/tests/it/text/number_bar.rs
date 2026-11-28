@@ -71,6 +71,8 @@ fn bar_steps_add_to_the_value_as_it_is() {
     assert_eq!(after_key(FEATHER, 10.0, Key::ArrowUp, Modifiers::NONE), Some(10.1), "Feather 10, Up");
     assert_eq!(after_key(FEATHER, 10.0, Key::ArrowUp, Modifiers::SHIFT), Some(11.0), "Feather 10, Shift+Up");
     assert_eq!(after_key(FEATHER, 10.05, Key::ArrowUp, Modifiers::SHIFT), Some(11.05), "Feather 10.05, Shift+Up");
+    let fine = Setup { step: 1e-10, range: (0.0, 1.0), ..OPACITY };
+    assert_eq!(after_key(fine, 0.0, Key::ArrowUp, Modifiers::NONE), Some(1e-10), "a step finer than a field's decimals still moves");
 }
 
 /// Ctrl+Up, Ctrl+Down, Page Up and Page Down leave a bar's field as it is.

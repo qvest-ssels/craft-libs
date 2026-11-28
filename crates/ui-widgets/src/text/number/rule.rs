@@ -72,7 +72,8 @@ impl Rule {
 
     /// The value `notches` steps of `scale` times the step from `from` as it is, without going to a multiple first (an
     /// options bar's field: 53 up by ten steps of 1 goes to 63), kept in the range. The sum is rounded to
-    /// [`ADDED_DECIMALS`] places, so a step of 0.1 adds no float noise.
+    /// [`ADDED_DECIMALS`] places, as many as a step can have, so a step of 0.1 adds no float noise and the finest
+    /// step still moves the value.
     pub(super) fn added(&self, from: f64, notches: i32, scale: f64) -> f64 {
         self.settle(round_to(from + f64::from(notches) * self.step * scale, ADDED_DECIMALS))
     }
@@ -83,8 +84,9 @@ impl Rule {
     }
 }
 
-/// The places [`Rule::added`] rounds its sum to: past any field's decimals, short of float noise.
-const ADDED_DECIMALS: usize = 9;
+/// The places [`Rule::added`] rounds its sum to: the most a step or a field's decimals have (12), short of float
+/// noise.
+const ADDED_DECIMALS: usize = 12;
 
 /// `value` rounded to `decimals` decimal places.
 pub(super) fn round_to(value: f64, decimals: usize) -> f64 {
