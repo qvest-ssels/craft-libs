@@ -138,3 +138,27 @@ fn only_image_size_limits_the_resolution_to_29999_999() {
     assert_eq!(*LinkedSize::new(SIZE).max_resolution(29_999.999).resolution_range().end(), 29_999.999);
     assert_eq!(*LinkedSize::new(SIZE).max_resolution(40_000.0).resolution_range().end(), 30_000.0, "the default range is the limit");
 }
+
+// The limit holds from the start, a size it cannot make is not shown as typed, and a relative pixel change shows the
+// whole pixels it made.
+#[trial]
+fn the_size_model_shows_what_the_limit_and_whole_pixels_make() {
+    let low = LinkedSize::new(SIZE).max_resolution(10.0);
+    assert_eq!(low.pixels_per_inch(), 10.0, "a limit under 72 ppi holds the opening resolution to it");
+    assert!(!low.resolution_changed(), "and the dialog opens unchanged");
+
+    let mut fixed = LinkedSize::new(SIZE).max_resolution(100.0);
+    fixed.set_unit(UnitKind::Inches);
+    fixed.resampling(false);
+    fixed.set_width(1.0);
+    assert_eq!(fixed.pixels_per_inch(), 100.0, "1 inch of 400 pixels needs 400 ppi; the limit keeps 100");
+    assert_eq!(fixed.width(), 4.0, "the width shows the 4 inches the 400 pixels make at 100 ppi");
+
+    let mut relative = LinkedSize::new(SIZE).chain(false);
+    relative.relative(true);
+    relative.set_width(-0.5);
+    assert_eq!(relative.pixels().width, 400, "-0.5 px rounds to no change");
+    assert_eq!(relative.width(), 0.0, "and the field shows no change");
+    relative.set_width(10.4);
+    assert_eq!((relative.pixels().width, relative.width()), (410, 10.0));
+}

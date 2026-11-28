@@ -217,6 +217,9 @@ impl LinkedSize {
     pub fn max_resolution(mut self, pixels_per_inch: f64) -> Self {
         if PPI_RANGE.contains(&pixels_per_inch) {
             self.max_ppi = pixels_per_inch;
+            // The resolution and its opening value stay in the range, and stay equal.
+            self.ppi = self.clamp_ppi(self.ppi);
+            self.original_ppi = self.clamp_ppi(self.original_ppi);
         }
         self
     }
@@ -494,16 +497,26 @@ impl LinkedSize {
         self.typed = None;
         if !self.resampling {
             if !is_pixel_unit(self.side_unit(side)) && pixels > 0.0 {
-                self.ppi = self.clamp_ppi(self.ppi * current / pixels);
+                let needed = self.ppi * current / pixels;
+                self.ppi = self.clamp_ppi(needed);
                 self.current = self.original;
-                self.remember(side, value);
+                // A size the resolution's range cannot make is not shown as typed: the field shows the one it made.
+                if self.ppi == needed {
+                    self.remember(side, value);
+                }
             }
             return;
         }
         let pixels = if self.relative { original + pixels } else { pixels };
         self.scale(side, pixels);
-        // A side takes whole pixels: 150.5 px makes 151, and the field shows the 151 it holds.
-        let value = if self.side_unit(side) == UnitKind::Pixels { value.round() } else { value };
+        // A side takes whole pixels: 150.5 px makes 151, and the field shows the 151 it holds (in a relative size, the
+        // change the whole pixels make).
+        let value = if self.side_unit(side) == UnitKind::Pixels {
+            let now = pixels_along(self.current, side);
+            if self.relative { now - original } else { now }
+        } else {
+            value
+        };
         self.remember(side, value);
     }
 
