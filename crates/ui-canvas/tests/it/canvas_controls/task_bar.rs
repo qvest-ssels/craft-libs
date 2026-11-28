@@ -605,3 +605,23 @@ fn a_bar_clear_of_the_handles_hangs_farther_below_its_anchor() {
     assert!(default > 0.0, "the bar hangs below its anchor: {default}");
     assert!(clear > default + 2.0 * SLACK, "the bar clear of the handles hangs farther below: {clear} against {default}");
 }
+
+/// storytold/photocraft#16756: a task bar without its More menu (Photoshop's Free Transform bar) shows no More button,
+/// even where the body places it, and keeps its grip and its move. The default bar keeps the menu.
+#[trial]
+fn a_task_bar_without_its_more_menu_keeps_its_grip_and_move() {
+    let bare = scene();
+    let mut fixture = fixture_with(&bare, |bar| bar.more_menu(false));
+    fixture.settle();
+    let shown = seen(&bare);
+    assert!(shown.rect.is_positive(), "the bar shows: {:?}", shown.rect);
+    assert!(fixture.by_label("More options").is_none(), "no More menu");
+    assert!(fixture.by_label("Done").is_some(), "the members show");
+    let grip = fixture.by_label("Move bar").expect("the grip stays");
+    fixture.drag(&grip, Vec2::new(-120.0, 60.0)).settle();
+    assert!(seen(&bare).place.offset.is_some(), "the bar still moves: {:?}", seen(&bare).place);
+
+    let mut fixture = fixture_with(&scene(), |bar| bar);
+    fixture.settle();
+    assert!(fixture.by_label("More options").is_some(), "the default bar has its More menu");
+}

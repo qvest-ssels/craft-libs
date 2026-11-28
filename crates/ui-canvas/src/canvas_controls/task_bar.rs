@@ -124,6 +124,11 @@ pub struct TaskBar<'a> {
     /// How far from its anchor's bounds a bar hung from document points hangs: a section gap by default.
     #[prop]
     hang_gap: TaskBarHang,
+    /// Whether the task bar has its More menu (Hide, Pin, Reset and the host's rows): on by default. Off, the bar has
+    /// no More button, `TaskBarCx::more_menu` places nothing, and Hide is the host's to offer elsewhere (Photoshop's
+    /// Free Transform bar). The grip and the move stay. A selection or fixed bar never has the menu.
+    #[prop]
+    more_menu: bool,
 }
 
 /// What a bar hangs from: the screen bounds of document points, or the canvas view's top edge, aligned in reading
@@ -296,6 +301,7 @@ impl<'a> TaskBar<'a> {
             grip: TaskBarGrip::Icon,
             member_gap: None,
             hang_gap: TaskBarHang::Gap,
+            more_menu: true,
         }
     }
 
@@ -325,6 +331,7 @@ impl<'a> TaskBar<'a> {
             grip: TaskBarGrip::Icon,
             member_gap: None,
             hang_gap: TaskBarHang::Gap,
+            more_menu: true,
         }
     }
 
@@ -353,7 +360,22 @@ impl<'a> TaskBar<'a> {
 
     /// Shows the bar inside `area`; `body` fills its members.
     pub fn show<R>(self, ui: &mut Ui, area: Rect, mut body: impl FnMut(&mut Ui, &mut TaskBarCx<'_>) -> R) -> Inner<TaskBarOutput, R> {
-        let TaskBar { label, hang, mut place, rows, kind, side, align, keep_clear, dismiss, compact, grip: grip_look, member_gap, hang_gap } = self;
+        let TaskBar {
+            label,
+            hang,
+            mut place,
+            rows,
+            kind,
+            side,
+            align,
+            keep_clear,
+            dismiss,
+            compact,
+            grip: grip_look,
+            member_gap,
+            hang_gap,
+            more_menu,
+        } = self;
         let side = side.unwrap_or(match kind {
             TaskBarKind::Task | TaskBarKind::Fixed => Side::Below,
             TaskBarKind::Selection => Side::Above,
@@ -397,7 +419,7 @@ impl<'a> TaskBar<'a> {
             TaskBarKind::Task | TaskBarKind::Fixed => layer_overlay(&held, hung.as_ref(), area, movable),
         };
         let layer = TaskBarLayer::new(label, overlay, shows, kind);
-        let mut menu = MoreMenu { words: Arc::clone(&words), offered: movable, pinned: held.pinned, rows, placed: false, pick: None };
+        let mut menu = MoreMenu { words: Arc::clone(&words), offered: movable && more_menu, pinned: held.pinned, rows, placed: false, pick: None };
         // Only the task bar moves, so only it starts with the grip.
         let grip = movable.then(|| words.task_bar_move.clone());
         let mut shown = layer.show(ui, |ui, layer| {
