@@ -186,7 +186,8 @@ impl InsideDrag {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct SelectSnap {
-    /// The kinds a drawn marquee's corners snap to (the press and the pointer while it sizes the marquee).
+    /// The kinds a drawn rectangle or ellipse marquee's corners snap to (the press and the pointer while it sizes the
+    /// marquee).
     pub draw: SnapKinds,
     /// The kinds a dragged selection's bounds snap to. The selection's own edges never take part: they move with it.
     pub moved: SnapKinds,
@@ -203,6 +204,14 @@ impl SelectSnap {
         draw: SnapKinds::ALL.without(SnapKind::LayerEdge).without(SnapKind::LayerCenter).without(SnapKind::Bounds),
         moved: SnapKinds::ALL.without(SnapKind::LayerEdge).without(SnapKind::LayerCenter),
     };
+}
+
+impl SelectSnap {
+    /// The kinds the pointer of a `kind` marquee snaps to: [`draw`](Self::draw) for a rectangle or ellipse, every kind
+    /// for the Single Row and Single Column Marquees.
+    pub(super) fn corners(self, kind: super::MarqueeKind) -> SnapKinds {
+        if kind.is_line() { SnapKinds::ALL } else { self.draw }
+    }
 }
 
 impl Default for SelectSnap {

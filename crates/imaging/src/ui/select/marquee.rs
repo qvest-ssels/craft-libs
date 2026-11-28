@@ -34,7 +34,7 @@ pub enum MarqueeKind {
 
 impl MarqueeKind {
     /// Whether the marquee is a line across the document.
-    fn is_line(self) -> bool {
+    pub(super) fn is_line(self) -> bool {
         matches!(self, MarqueeKind::SingleRow | MarqueeKind::SingleColumn)
     }
 }
@@ -136,8 +136,8 @@ impl MarqueeTool {
     }
 
     /// The targets the marquee's corners ([`SelectSnap::draw`]) and a dragged selection ([`SelectSnap::moved`]) snap
-    /// to; every kind by default, [`SelectSnap::PHOTOSHOP`] for Photoshop's. A marquee moved with Space held and a
-    /// Single Row or Column click snap as before.
+    /// to; every kind by default, [`SelectSnap::PHOTOSHOP`] for Photoshop's. A marquee moved with Space held and the
+    /// Single Row and Single Column Marquees snap to every kind as before.
     pub fn snapping(&mut self, snap: SelectSnap) -> &mut Self {
         self.snap = snap;
         self
@@ -201,7 +201,7 @@ impl MarqueeTool {
     fn follow(&mut self, pointer: &ToolPointer, raw: Point, cx: &mut ToolContext<'_>) {
         let (constraint, kind) = (self.constraint, self.kind);
         let space = cx.held(Key::Space) && !kind.is_line();
-        let at = if space { raw } else { cx.snap_to(raw, self.snap.draw) };
+        let at = if space { raw } else { cx.snap_to(raw, self.snap.corners(kind)) };
         let Some(press) = self.press.as_mut() else { return };
         press.gesture.follow(Some(pointer.pos), pointer.mods);
         press.last = at;
@@ -302,7 +302,7 @@ impl CanvasTool for SelectToolPass<'_, MarqueeTool> {
         if pointer.mods.cmd {
             return ToolAction::Ignored;
         }
-        let at = cx.snap_to(raw, tool.snap.draw);
+        let at = cx.snap_to(raw, tool.snap.corners(tool.kind));
         // With a selection the press modifiers pick the operation and must be pressed again to square or centre;
         // with nothing selected they square and centre from the first move.
         let held = if probe.has_selection() { pointer.mods } else { Mods::NONE };

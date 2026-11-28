@@ -544,6 +544,14 @@ fn photoshop_s_marquee_corners_leave_out_layers_and_the_document_edge() {
     let events = stroke(&mut rig, (104.0, 20.0), (247.0, 60.0), NONE, NONE);
     assert_eq!(events, [commit((104.0, 20.0, 250.0, 60.0), SelectionOperation::New)], "the guide snaps");
 
+    // The Single Column Marquee keeps snapping to every kind: a click 2.5 pixels right of the layer's edge selects the
+    // column on it.
+    let mut column = MarqueeTool::new(MarqueeKind::SingleColumn);
+    column.snapping(SelectSnap::PHOTOSHOP);
+    let mut rig = snapped_to("Marquee", column, Fake::empty(), kinds_apart());
+    click(&mut rig, (102.5, 45.0), NONE);
+    assert_eq!(rig.tool_mut().events(), [commit((100.0, 0.0, 101.0, 300.0), SelectionOperation::New)], "the column snaps to the edge");
+
     let mut rig = snapped_to("Marquee", MarqueeTool::new(MarqueeKind::Rectangle), Fake::empty(), kinds_apart());
     let events = stroke(&mut rig, (104.0, 20.0), (157.0, 60.0), NONE, NONE);
     assert_eq!(events, [commit((100.0, 20.0, 160.0, 60.0), SelectionOperation::New)], "every kind pulls onto the edges");
