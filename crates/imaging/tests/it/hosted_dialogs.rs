@@ -45,7 +45,7 @@ fn hosted_layer_style_queues_its_asks_and_answers_with_its_style() {
     }
     let ok = fixture.by_label("OK").expect("the OK button");
     fixture.click(&ok).idle(4);
-    let effects = host.borrow_mut().take::<HostedLayerStyle>().and_then(DialogResult::ok).map(|style| style.effects);
+    let effects = host.borrow_mut().take::<HostedLayerStyle>().and_then(DialogResult::ok).map(|draft| draft.style.effects);
     assert_eq!(effects, Some(vec![shadow]), "OK answers with the draft's style, the app's answers included");
 
     host.borrow_mut().open(layer_style());

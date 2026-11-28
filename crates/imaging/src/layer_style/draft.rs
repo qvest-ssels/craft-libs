@@ -5,16 +5,18 @@ use super::drag::{GradientOffsetDrag, ShadowDrag};
 use super::model::{EffectId, EffectInstance, EffectKind, LayerStyle, LayerStylePage, StyleParams, StyleValue};
 use super::spec::EffectSpec;
 
-/// What the Layer Style dialog edits: the [`LayerStyle`] and the dialog's view state (the page,
-/// the Blend If channel shown, the Preview check, a shadow drag in progress).
+/// What the Layer Style dialog edits: the [`LayerStyle`], the layer's name when the dialog shows
+/// it, and the dialog's view state (the page, the Blend If channel shown, the Preview check, a
+/// shadow drag in progress).
 ///
 /// The app owns the draft for as long as the dialog is open. The dialog reports the style as the
 /// value of its edits (`EditEvent<LayerStyle>`) and the view state beside them (the page, the
 /// Blend If channel and Preview as `Option`s of what changed); the app keeps both, previews the
 /// style while [`preview`](Self::preview) is on, applies [`style`](Self::style) as one history
 /// step on OK and drops it on Cancel. Only the style is recorded by `Dialog::history`, so Undo
-/// never moves the view, the view state never reaches the document, and
-/// [`render_hash`](Self::render_hash) ignores it: a page change re-renders nothing.
+/// never moves the view or the name, the view state never reaches the document, and
+/// [`render_hash`](Self::render_hash) ignores both: a page change or a new name re-renders
+/// nothing.
 #[derive(Clone, Debug, PartialEq)]
 pub struct LayerStyleDraft {
     /// The effect and blending values being edited.
@@ -30,6 +32,10 @@ pub struct LayerStyleDraft {
     pub shadow_drag: Option<ShadowDrag>,
     /// The Gradient Overlay offset drag in progress, from its press to its release.
     pub gradient_drag: Option<GradientOffsetDrag>,
+    /// The text of the dialog's Name field, above the effect list on every page. The host fills it
+    /// with the layer's name and renames the layer on OK when it changed. `None`, the default,
+    /// shows no Name field.
+    pub name: Option<String>,
 }
 
 impl Default for LayerStyleDraft {
@@ -45,7 +51,7 @@ impl LayerStyleDraft {
     // first instance).
     pub fn new(style: LayerStyle) -> LayerStyleDraft {
         let page = style.effects.first().map_or(LayerStylePage::Blending, |e| LayerStylePage::Effect(e.id));
-        LayerStyleDraft { style, page, blend_if_channel: 0, preview: true, shadow_drag: None, gradient_drag: None }
+        LayerStyleDraft { style, page, blend_if_channel: 0, preview: true, shadow_drag: None, gradient_drag: None, name: None }
     }
 
     /// Whether a drag on the image moves the selected effect's gradient offset now: a Gradient
@@ -302,7 +308,7 @@ impl LayerStyleDraft {
     }
 
     /// The style's [`render_hash`](LayerStyle::render_hash); the page, the Blend If channel,
-    /// the Preview check and the drag don't count.
+    /// the Preview check, the drag and the name don't count.
     pub fn render_hash(&self) -> u64 {
         self.style.render_hash()
     }

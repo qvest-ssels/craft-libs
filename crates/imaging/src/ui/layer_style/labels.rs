@@ -14,6 +14,8 @@ craft_ui::words! {
         /// The effect list's accessible name.
         effects: "layerStyle.effects" = "Effects";
         styles: "layerStyle.styles" = "Styles";
+        /// The Name field above the effect list: the layer's name.
+        name: "layerStyle.name" = "Name";
         blending_options: "layerStyle.blendingOptions" = "Blending Options";
         bevel_emboss: "layerStyle.effectBevelEmboss" = "Bevel & Emboss";
         stroke: "layerStyle.effectStroke" = "Stroke";

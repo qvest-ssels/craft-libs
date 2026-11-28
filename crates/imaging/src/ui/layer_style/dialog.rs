@@ -5,12 +5,14 @@ use std::collections::HashMap;
 
 use craft_color_ui::gradient::GradientStops;
 use craft_theme::{Srgba, TypeRole};
-use craft_ui::contract::{CommandSet as _, Entry, NoValue, Outcome, Pattern, Props as _, Show as _, ShowContainer as _};
+use craft_ui::contract::{Bind, CommandSet as _, Entry, NoValue, Outcome, Pattern, Props as _, Show as _, ShowContainer as _};
 use craft_ui::display::{Divider, Text};
+use craft_ui::form::Field;
 use craft_ui::layout_components::{Row, Stack};
 use craft_ui::patterns::presets::{PresetFns, PresetSource};
 use craft_ui::runtime::env::{Env, Label};
 use craft_ui::runtime::requests::ColorRequest;
+use craft_ui::text::TextField;
 use egui::{Response, Ui};
 
 use super::blending::{BlendingInput, blending_page};
@@ -63,6 +65,9 @@ pub struct LayerStyleOutput {
     /// first one): the instance, the parameter's key and the value. It is not an edit:
     /// [`apply_view`](LayerStyleOutput::apply_view) writes it into the draft without an undo step.
     pub fill_default: Option<(EffectId, String, StyleValue)>,
+    /// The Name field's text after this pass's typing, when it changed; the host keeps it in [`LayerStyleDraft::name`]
+    /// ([`apply_view`](LayerStyleOutput::apply_view) does). It is not a style edit, so it stays out of the history.
+    pub name: Option<String>,
 }
 
 impl Outcome for LayerStyleOutput {
@@ -74,7 +79,7 @@ impl Outcome for LayerStyleOutput {
 }
 
 impl LayerStyleOutput {
-    /// Writes the view state this pass reported (page, Blend If channel) and the
+    /// Writes the view state this pass reported (page, Blend If channel, name) and the
     /// [`fill_default`](LayerStyleOutput::fill_default) into `draft`. The style edit is the host's, as its history rules
     /// apply it.
     pub fn apply_view(&self, draft: &mut LayerStyleDraft) {
@@ -83,6 +88,9 @@ impl LayerStyleOutput {
         }
         if let Some(channel) = self.blend_if_channel {
             draft.blend_if_channel = channel;
+        }
+        if let Some(name) = &self.name {
+            draft.name = Some(name.clone());
         }
         if let Some((id, key, value)) = &self.fill_default {
             draft.set_param(*id, key, value.clone());
@@ -94,6 +102,8 @@ impl LayerStyleOutput {
 /// between. The host owns the frame (a dialog with OK, Cancel and Alt+Cancel Reset), the draft, the engine and the
 /// preview.
 ///
+/// - The Name field above the list and the page, on every page, while the draft has a [`LayerStyleDraft::name`]: its
+///   typing is reported in [`LayerStyleOutput::name`], and Enter in it is the host's OK.
 /// - The list ([`LayerStyleCommand`] holds its `+` and `−` keys): Styles, Blending Options, the effects, with muted
 ///   names for effects that are off and dimmed rows for absent ones.
 /// - A page change is reported in [`LayerStyleOutput::page`] and drawn once the host has applied it. The page drawn in
@@ -237,6 +247,8 @@ impl<'a> LayerStyleDialog<'a> {
         let mut work = Work { next: draft.clone(), edit: EditEvents::new(), extras: Extras::default() };
         let title = page_title(draft.page, draft, &words);
         let name = label.as_str().to_owned();
+        // The Name field goes above the list and the page.
+        let renamed = draft.name.as_deref().and_then(|text| name_field(ui, text, &words));
         let shown = Row::new().label(label.clone()).show(ui, |ui, _| {
             let list = Stack::new().command_scope(LayerStyleCommand::SCOPE).show(ui, |ui, cx| effect_list(ui, cx, draft, specs, &words, &units));
             Divider::vertical().show(ui);
@@ -272,6 +284,7 @@ impl<'a> LayerStyleDialog<'a> {
             contour_action: extras.contour_action,
             edit_contour: extras.edit_contour,
             fill_default: extras.fill_default,
+            name: renamed,
         }
     }
 
@@ -448,6 +461,15 @@ impl Work {
             }
         }
     }
+}
+
+/// The Name field over `text`: its text when this pass's typing changed it. Enter is left to the host's OK.
+fn name_field(ui: &mut Ui, text: &str, words: &LayerStyleWords) -> Option<String> {
+    let label = words.name.clone();
+    let typed = Field::new(label.clone())
+        .id_salt("name")
+        .show(ui, |ui, _| TextField::new(label.clone(), Bind::given(text.to_owned())).id_salt("name").show(ui));
+    typed.inner.and_then(|field| field.value().cloned()).filter(|typed| typed != text)
 }
 
 /// The title of `page` of `draft`, for the page's AccessKit group.

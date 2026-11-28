@@ -23,9 +23,7 @@ use egui::{Context, Rect, Response, Ui, Vec2};
 use super::contour::ContourSampler;
 use super::labels::LayerStyleWords;
 use super::{ContourAction, ContourRequest, LayerStyleDialog, LayerStyleOutput};
-use crate::layer_style::{
-    Contour, EffectId, EffectKind, EffectSpec, FieldKind, LayerStyle, LayerStyleDraft, LayerStylePage, StyleParams, StyleValue,
-};
+use crate::layer_style::{Contour, EffectId, EffectKind, EffectSpec, FieldKind, LayerStyleDraft, LayerStylePage, StyleParams, StyleValue};
 
 /// What the open Layer Style dialog asks of the app in a pass; [`HostedLayerStyle::take_asks`] hands them over in the
 /// order they came.
@@ -137,14 +135,15 @@ impl Component for PreviewSwatch<'_> {
 
 /// The Layer Style dialog the [`DialogHost`](craft_ui::dialog::DialogHost) owns: the [`LayerStyleDialog`] body over a
 /// draft the host keeps, in a form dialog with OK and Cancel beside the body (Alt turns Cancel into Reset) and the
-/// Preview box under them. Style edits and view changes go into the draft; what the page asks of the app waits in
-/// [`take_asks`](Self::take_asks). It answers with the draft's style at OK.
+/// Preview box under them. Style edits, the Name field's text and view changes go into the draft; what the page asks
+/// of the app waits in [`take_asks`](Self::take_asks). It answers with the draft at OK: the style to apply and, with a
+/// [`name`](Self::name), the name to give the layer.
 ///
 /// ```ignore
 /// host.open(HostedLayerStyle::new("Layer Style", LayerStyleDraft::new(style), channels).blend_modes(modes));
 /// // each pass: preview from host.get::<HostedLayerStyle>().map(HostedLayerStyle::draft);
 /// // answer host.get_mut::<HostedLayerStyle>().take_asks();
-/// if let Some(DialogResult::Ok(style)) = host.take::<HostedLayerStyle>() { commit(style) }
+/// if let Some(DialogResult::Ok(draft)) = host.take::<HostedLayerStyle>() { commit(draft.style, draft.name) }
 /// ```
 pub struct HostedLayerStyle {
     id: DialogId,
@@ -269,6 +268,14 @@ impl HostedLayerStyle {
         self
     }
 
+    /// Shows the Name field above the effect list, filled with `name` (the layer's): the draft's
+    /// [`name`](LayerStyleDraft::name). Enter in it is OK.
+    #[must_use]
+    pub fn name(mut self, name: impl Into<String>) -> Self {
+        self.draft.name = Some(name.into());
+        self
+    }
+
     /// The draft the dialog shows: the app previews from it.
     pub fn draft(&self) -> &LayerStyleDraft {
         &self.draft
@@ -317,13 +324,13 @@ impl HostedLayerStyle {
 }
 
 impl StackDialog for HostedLayerStyle {
-    type Result = LayerStyle;
+    type Result = LayerStyleDraft;
 
     fn id(&self) -> DialogId {
         self.id
     }
 
-    fn show(&mut self, ui: &mut Ui, _: &DialogStack) -> Option<DialogResult<LayerStyle>> {
+    fn show(&mut self, ui: &mut Ui, _: &DialogStack) -> Option<DialogResult<LayerStyleDraft>> {
         let HostedLayerStyle {
             label,
             open,
@@ -409,7 +416,7 @@ impl StackDialog for HostedLayerStyle {
             draft.preview = preview;
         }
         *comparing = shown.comparing;
-        let accepted = shown.accepted.map(|draft| DialogResult::Ok(draft.style));
+        let accepted = shown.accepted.map(DialogResult::Ok);
         accepted.or(shown.closed.map(|_| DialogResult::Cancel))
     }
 
@@ -417,8 +424,8 @@ impl StackDialog for HostedLayerStyle {
         Some(KEY)
     }
 
-    fn confirm(&mut self, _: &Context) -> Option<LayerStyle> {
-        Some(self.draft.style.clone())
+    fn confirm(&mut self, _: &Context) -> Option<LayerStyleDraft> {
+        Some(self.draft.clone())
     }
 
     fn json_fields(&self) -> Option<serde_json::Value> {
@@ -429,7 +436,11 @@ impl StackDialog for HostedLayerStyle {
         };
         let effects: Vec<_> =
             self.draft.style.effects.iter().map(|e| serde_json::json!({ "id": e.id.key(), "kind": e.kind.key(), "on": e.on })).collect();
-        Some(serde_json::json!({ "page": page, "preview": self.draft.preview, "effects": effects }))
+        let mut fields = serde_json::json!({ "page": page, "preview": self.draft.preview, "effects": effects });
+        if let (Some(name), Some(fields)) = (&self.draft.name, fields.as_object_mut()) {
+            fields.insert("name".to_owned(), serde_json::Value::String(name.clone()));
+        }
+        Some(fields)
     }
 
     fn set_json_field(&mut self, _: &Context, field: &str, value: serde_json::Value) -> Result<(), String> {
@@ -455,6 +466,12 @@ impl StackDialog for HostedLayerStyle {
             "preview" => {
                 let Some(on) = value.as_bool() else { return rejected() };
                 self.draft.preview = on;
+                Ok(())
+            }
+            // The Name field exists only while the app gave the dialog a name.
+            "name" if self.draft.name.is_some() => {
+                let Some(text) = value.as_str() else { return rejected() };
+                self.draft.name = Some(text.to_owned());
                 Ok(())
             }
             "editContour" => {
