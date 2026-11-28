@@ -27,6 +27,11 @@ struct Host {
 }
 
 fn harness(tool: PaintTool, eraser: EraserMode, prepare: impl FnOnce(&mut PaintValues<u32>)) -> (Fixture, Rc<RefCell<Host>>) {
+    harness_with(tool, eraser, false, prepare)
+}
+
+/// [`harness`] with the percent fields stepping and scrubbing as an options bar's when `bar_fields`.
+fn harness_with(tool: PaintTool, eraser: EraserMode, bar_fields: bool, prepare: impl FnOnce(&mut PaintValues<u32>)) -> (Fixture, Rc<RefCell<Host>>) {
     let mut values = PaintValues::new(0u32);
     prepare(&mut values);
     let host = Rc::new(RefCell::new(Host { values, eraser, edits: Vec::new(), cleans: 0, alerts: Vec::new() }));
@@ -39,6 +44,9 @@ fn harness(tool: PaintTool, eraser: EraserMode, prepare: impl FnOnce(&mut PaintV
             let mut bar = PaintBar::new(tool, &mut *values).modes(&modes);
             if tool == PaintTool::Eraser {
                 bar = bar.eraser_mode(&mut *eraser);
+            }
+            if bar_fields {
+                bar = bar.bar_fields();
             }
             let out = bar.show(ui);
             edits.extend(out.edits);
@@ -234,4 +242,26 @@ fn opacity_and_flow_hold_one_to_a_hundred_percent_and_smoothing_still_takes_zero
     let host = host.borrow();
     assert_eq!(host.values.smoothing.amount, 0.0, "Smoothing takes 0");
     assert!(host.alerts.is_empty(), "and reports nothing: {:?}", host.alerts);
+}
+
+/// storytold/photocraft#16807 and #16814: with `bar_fields` Opacity steps from 53 % by ten to 63 % on Shift+Up, takes
+/// no step from Page Up, and a drag on the field leaves it; without, Shift+Up goes to the next multiple of ten.
+#[trial]
+fn bar_fields_step_from_the_value_and_scrub_only_by_the_label() {
+    let shift_up = |bar_fields: bool, key: Key, modifiers: Modifiers| {
+        let (mut fixture, host) = harness_with(PaintTool::Brush, EraserMode::Brush, bar_fields, |v| v.opacity = 0.53);
+        let field = fixture.by_label("Opacity").expect("the bar shows Opacity");
+        fixture.click(&field).settle();
+        fixture.key(key, modifiers).settle();
+        let opacity = host.borrow().values.opacity;
+        (opacity * 100.0).round()
+    };
+    assert_eq!(shift_up(true, Key::ArrowUp, Modifiers::SHIFT), 63.0, "bar fields: 53, Shift+Up");
+    assert_eq!(shift_up(true, Key::PageUp, Modifiers::NONE), 53.0, "bar fields: Page Up steps nothing");
+    assert_eq!(shift_up(false, Key::ArrowUp, Modifiers::SHIFT), 60.0, "plain fields: 53, Shift+Up");
+
+    let (mut fixture, host) = harness_with(PaintTool::Brush, EraserMode::Brush, true, |v| v.opacity = 0.53);
+    let field = fixture.by_label("Opacity").expect("the bar shows Opacity");
+    fixture.drag_at(field.center(), egui::vec2(30.0, 0.0)).settle();
+    assert_eq!(host.borrow().values.opacity, 0.53, "a drag on a bar field's body leaves the value");
 }

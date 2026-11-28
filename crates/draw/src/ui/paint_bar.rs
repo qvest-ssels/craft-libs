@@ -238,6 +238,8 @@ pub struct PaintBar<'a, M: Value> {
     values: &'a mut PaintValues<M>,
     eraser_mode: Option<&'a mut EraserMode>,
     modes: &'a [Entry<M>],
+    /// The percent fields step and scrub as an options bar's ([`bar_fields`](Self::bar_fields)).
+    bar_fields: bool,
 }
 
 /// What [`PaintBar::show`] reports.
@@ -260,7 +262,7 @@ pub struct PaintBarOutput<M> {
 impl<'a, M: Value> PaintBar<'a, M> {
     /// The bar of `tool` over `values`.
     pub fn new(tool: PaintTool, values: &'a mut PaintValues<M>) -> Self {
-        PaintBar { tool, values, eraser_mode: None, modes: &[] }
+        PaintBar { tool, values, eraser_mode: None, modes: &[], bar_fields: false }
     }
 
     /// The Eraser's mode, shown for the Eraser tool.
@@ -275,15 +277,24 @@ impl<'a, M: Value> PaintBar<'a, M> {
         self
     }
 
+    /// The percent fields (Opacity, Flow, Smoothing and the Mixer Brush's) step and scrub as an options bar's do:
+    /// `NumberField::bar_steps` (Up and Down add a step to the value as it is, Shift ten, Alt no fine step, no Ctrl or
+    /// Page key steps) and `NumberField::label_scrub_only` (a drag on the field selects its text; the label scrubs).
+    /// Off by default.
+    pub fn bar_fields(mut self) -> Self {
+        self.bar_fields = true;
+        self
+    }
+
     /// Shows the members.
     pub fn show(self, ui: &mut Ui) -> PaintBarOutput<M> {
-        let PaintBar { tool, values, mut eraser_mode, modes } = self;
+        let PaintBar { tool, values, mut eraser_mode, modes, bar_fields } = self;
         let words = Env::of(ui).words::<PaintBarWords>();
         let eraser = if tool == PaintTool::Eraser { eraser_mode.as_deref().copied().unwrap_or_default() } else { EraserMode::Brush };
         // The Block eraser has no brush engine behind it; the Pencil eraser has no soft edge and no flow.
         let sized = eraser != EraserMode::Block;
         let soft = eraser == EraserMode::Brush;
-        let mut pass = Pass { values, edits: EditEvents::new(), eraser_edit: None, out_of_range: None, load: false, clean: false };
+        let mut pass = Pass { values, edits: EditEvents::new(), eraser_edit: None, out_of_range: None, load: false, clean: false, bar_fields };
         let shown = Row::new().gap(Gap::Item).show(ui, |ui, cx| {
             if tool == PaintTool::MixerBrush {
                 pass.mixer_load(ui, &words);
@@ -342,6 +353,8 @@ struct Pass<'p, M: Value> {
     out_of_range: Option<RangeAlert>,
     load: bool,
     clean: bool,
+    /// The percent fields step and scrub as an options bar's.
+    bar_fields: bool,
 }
 
 impl<M: Value> Pass<'_, M> {
@@ -385,6 +398,7 @@ impl<M: Value> Pass<'_, M> {
     /// A percent field over a fraction 0..1, holding `percents`.
     fn percent(&mut self, ui: &mut Ui, salt: &'static str, caption: &Label, percents: Percents, current: f64, set: fn(&mut PaintValues<M>, f64)) {
         let Percents { range, enabled } = percents;
+        let bar = self.bar_fields;
         // The body may run more than once in a pass and only the run that reads the input reports its events, so every
         // run's events and alert are collected.
         let collected: RefCell<(EditEvents<Option<f64>>, Option<RangeAlert>)> = RefCell::new((EditEvents::new(), None));
@@ -393,8 +407,9 @@ impl<M: Value> Pass<'_, M> {
                 .unit_kind(UnitKind::Percent)
                 .range(range.clone())
                 .commit_decimals(0)
-                .scrub_by_label()
-                .show(ui);
+                .scrub_by_label();
+            let field = if bar { field.bar_steps().label_scrub_only() } else { field };
+            let field = field.show(ui);
             let mut sink = collected.borrow_mut();
             for event in field.edit.events.clone() {
                 sink.0.push(event);

@@ -2,7 +2,8 @@
 //!
 //! Typing, expressions, unit spellings and locale digits are the codec's (`quantity::Reader`); the field adds the
 //! range every written value stays in and the step that arrows, the wheel and a scrub move by. A drag on a field that
-//! is not in edit scrubs it; a click enters edit, where a drag selects text.
+//! is not in edit scrubs it (not with `label_scrub_only`); a click enters edit, where a drag selects text. An options
+//! bar's field opts into its own keys and scrub with `bar_steps` and `label_scrub_only`.
 
 #[cfg(feature = "suite")]
 pub(crate) mod stories;
@@ -240,6 +241,10 @@ pub struct NumberField<'a, V: NumberValue + 'static = Option<f64>> {
     /// as a drag on the slider would.
     track: f32,
     picked: Option<NumberPick>,
+    /// Arrow keys step as an options bar's field does ([`bar_steps`](Self::bar_steps)).
+    bar_steps: bool,
+    /// Only the side label scrubs ([`label_scrub_only`](Self::label_scrub_only)).
+    label_scrub_only: bool,
     /// The inside label's glyph before the text (`EnvView::inside_label`), measured in measure and parts for paint.
     leading: Vec<Adornment>,
     /// The unit and the chevrons after the text, measured in measure and parts for paint.
@@ -319,6 +324,8 @@ impl<'a, V: NumberValue + 'static> NumberField<'a, V> {
             scrub: false,
             track: 0.0,
             picked: None,
+            bar_steps: false,
+            label_scrub_only: false,
             leading: Vec::new(),
             trailing: Vec::new(),
             value_width: 0.0,
@@ -382,6 +389,26 @@ impl<'a, V: NumberValue + 'static> NumberField<'a, V> {
     /// A drag on the field's side label scrubs the value too, with or without the focus in the field.
     #[must_use]
     pub fn scrub_by_label(mut self) -> Self {
+        self.scrub = true;
+        self
+    }
+
+    /// Arrow keys step as an options bar's field does: Up and Down add one step to the value as it is and Shift+Up and
+    /// Shift+Down ten, without going to a multiple first (53 goes to 63); Alt steps as the plain arrow, so a key never
+    /// gives a whole-number field a fraction. Ctrl+Up, Ctrl+Down, Page Up and Page Down change nothing. The range
+    /// still holds the result. The step arrows, the wheel and AccessKit step as usual.
+    #[must_use]
+    pub fn bar_steps(mut self) -> Self {
+        self.bar_steps = true;
+        self
+    }
+
+    /// Only the side label scrubs, as in an options bar: a drag on the field's body is the text's (it focuses the
+    /// field and selects), with or without the focus, and the pointer over the body is the text cursor. A drag on the
+    /// label scrubs as with [`scrub_by_label`](Self::scrub_by_label).
+    #[must_use]
+    pub fn label_scrub_only(mut self) -> Self {
+        self.label_scrub_only = true;
         self.scrub = true;
         self
     }
@@ -628,9 +655,9 @@ impl<'a, V: NumberValue + 'static> NumberField<'a, V> {
     }
 
     /// One step of `notches` (up positive) scaled by `scale`, from the applied value or from blank, by the stepper when
-    /// the field has one and by the rule otherwise. A wheel run commits first and the step starts from the value it
-    /// showed.
-    fn step_by(&self, cx: &mut Cx<'_, Self>, notches: i32, scale: f64) {
+    /// the field has one and by the rule otherwise: to the next multiple first, or with `as_is` from the value as it
+    /// is ([`Rule::added`]). A wheel run commits first and the step starts from the value it showed.
+    fn step_by(&self, cx: &mut Cx<'_, Self>, notches: i32, scale: f64, as_is: bool) {
         if cx.in_wheel_run() {
             cx.commit();
         }
@@ -638,6 +665,7 @@ impl<'a, V: NumberValue + 'static> NumberField<'a, V> {
         let from = self.shown_number(cx.value()).unwrap_or_else(|| rule.blank());
         let next = match &self.stepper {
             Some(stepper) => rule.settle(stepper.next(from, notches, scale)),
+            None if as_is => rule.added(from, notches, scale),
             None => rule.stepped(from, notches, scale),
         };
         cx.set(V::of_number(self.to_stored(next)));
@@ -721,9 +749,10 @@ impl<V: NumberValue + 'static> Component for NumberField<'_, V> {
         }
     }
 
-    /// A drag on the body scrubs a field that is not in edit; the wheel steps the value.
+    /// A drag on the body scrubs a field that is not in edit, unless only the label scrubs; the wheel steps the value.
     fn sense(&self) -> Sense {
-        Sense::CLICK | Sense::DRAG | Sense::FOCUS | Sense::TAKE_FOCUS | Sense::WHEEL_Y
+        let sense = Sense::CLICK | Sense::FOCUS | Sense::TAKE_FOCUS | Sense::WHEEL_Y;
+        if self.label_scrub_only { sense } else { sense | Sense::DRAG }
     }
 
     fn measure(&mut self, cx: &MeasureCx<'_, Self>) -> Vec2 {
@@ -845,7 +874,8 @@ impl<V: NumberValue + 'static> Component for NumberField<'_, V> {
         proposed == host || (proposed.named() == host.named() && at_precision(proposed) == at_precision(host))
     }
 
-    /// A drag on the body of a field not in edit, or on its side label with `scrub_by_label`, moves by the scrub step per point;
+    /// A drag on the body of a field not in edit (not with `label_scrub_only`), or on its side label with
+    /// `scrub_by_label`, moves by the scrub step per point;
     /// a drag on the popup slider's chevron moves the value as far as the same drag on the slider.
     fn scrub(&self) -> Option<Scrub<V>> {
         let rule = self.rule();
@@ -856,8 +886,10 @@ impl<V: NumberValue + 'static> Component for NumberField<'_, V> {
         let decimals = self.decimals();
         let scale = self.scale;
         let mut scrub =
-            Scrub::new(drag, move |value: &V| value.number().unwrap_or(0.0) * scale, move |number| V::of_number(round_to(number, decimals) / scale))
-                .on_field();
+            Scrub::new(drag, move |value: &V| value.number().unwrap_or(0.0) * scale, move |number| V::of_number(round_to(number, decimals) / scale));
+        if !self.label_scrub_only {
+            scrub = scrub.on_field();
+        }
         if self.scrub {
             scrub = scrub.by_label();
         }
@@ -900,14 +932,24 @@ impl<V: NumberValue + 'static> Component for NumberField<'_, V> {
             let (now, elapsed) = frame::running(&ctx).map_or((start.time, 0.0), |facts| (facts.now, facts.elapsed));
             let scale = key_scale(MoveMods::new(press.mods.shift, false, Granularity::Unit).fine(press.mods.alt), fine_shows);
             for _ in 0..if first { 1 } else { hold.due(now, elapsed) } {
-                self.step_by(cx, notches, scale);
+                self.step_by(cx, notches, scale, false);
             }
             frame::request_repaint_after(&ctx, hold.next_repeat(now) - now);
         }
+        // An options bar's field takes no step from Ctrl+Up and Ctrl+Down: off macOS Ctrl is the move's `lead`, on
+        // macOS the arrow arrives plain, so the key itself is read.
+        let bar = self.bar_steps;
+        let bar_ctrl = bar && cx.modifiers().ctrl;
+        // Alt is no fine step in a bar's field.
+        let key_fine = fine_shows && !bar;
         while let Some((mv, mods)) = cx.intents().take_move() {
+            let vertical = matches!(mv, NavMove::Up | NavMove::Down);
+            if bar && (matches!(mv, NavMove::PageUp | NavMove::PageDown) || (vertical && (mods.lead || bar_ctrl))) {
+                continue;
+            }
             let (notches, scale) = match mv {
-                NavMove::Up => (1, key_scale(mods, fine_shows)),
-                NavMove::Down => (-1, key_scale(mods, fine_shows)),
+                NavMove::Up => (1, key_scale(mods, key_fine)),
+                NavMove::Down => (-1, key_scale(mods, key_fine)),
                 NavMove::PageUp => (1, LARGE_STEPS),
                 NavMove::PageDown => (-1, LARGE_STEPS),
                 // AccessKit Increment and Decrement: the text keeps the horizontal arrows, so only those arrive.
@@ -915,7 +957,7 @@ impl<V: NumberValue + 'static> Component for NumberField<'_, V> {
                 NavMove::Back => (-1, 1.0),
                 _ => continue,
             };
-            self.step_by(cx, notches, scale);
+            self.step_by(cx, notches, scale, bar && vertical);
         }
         if let Some(wheel) = cx.take_wheel() {
             let from = self.shown_number(cx.value()).unwrap_or_else(|| rule.blank());
