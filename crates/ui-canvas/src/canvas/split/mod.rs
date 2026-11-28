@@ -34,8 +34,8 @@ const DIVIDER: PartKey = PartKey::new("divider");
 const PANE: PartKey = PartKey::new("pane");
 
 /// How the canvas area divides: the Window › Arrange arrangements. The n-up and tile arrangements divide it into panes
-/// in the reading order [`arrange_rects`] gives (pane 0 at the top start corner); any other entry, or fewer than two
-/// panes, shows one pane over the whole area.
+/// in the order [`arrange_rects`] gives (pane 0 at the top start corner; reading order, except Tile's column by
+/// column); any other entry, or fewer than two panes, shows one pane over the whole area.
 pub use craft_behavior::dock::Arrangement as SplitLayout;
 
 /// How a pointer press in an inactive pane activates it.

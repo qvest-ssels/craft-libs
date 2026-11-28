@@ -658,7 +658,7 @@ The dock model: the tree of splits over panel frames, the side of a group a drop
   - `pub fn delete(&mut self, id: &str) -> Result<(), WorkspaceError>`. Delete a saved workspace; the current one can't be deleted (Photoshop greys it).
   - `pub fn reset(&mut self, live: &mut Workspace<P>) -> Result<(), WorkspaceError>`. Reset the current workspace: drop what it was left with and replace `live` with its stored
 - `craft_behavior::dock::ZoneSize`: `pub enum ZoneSize { Depth(f32), Fraction }`. How deep the side zones of a body are.
-- `craft_behavior::dock::arrange_rects`: `pub fn arrange_rects(arrangement: Arrangement, area: Rect, n: usize) -> Option<Vec<Rect>>`. The cells of an n-up or Tile All arrangement inside `area`, in reading order. `Tile All
+- `craft_behavior::dock::arrange_rects`: `pub fn arrange_rects(arrangement: Arrangement, area: Rect, n: usize) -> Option<Vec<Rect>>`. The cells of an n-up, Tile All or Tile arrangement inside `area`, in reading order except
 - `craft_behavior::dock::first_active`: `pub fn first_active<P>(root: &Node<P>) -> Option<&P>`. The shown panel of a tree's first group.
 - `craft_behavior::dock::node_at`: `pub fn node_at<'a, P>(mut node: &'a Node<P>, path: &[bool]) -> Option<&'a Node<P>>`. The node at `path` from `root`: false is a split's first child, true its second.
 - `craft_behavior::dock::tree_panels`: `pub fn tree_panels<P>(root: &Node<P>) -> Vec<&P>`. The panels of a tree in order, without recursion; at most [`MAX_PANELS`].

@@ -69,6 +69,18 @@ fn in_reading_order_without_overlap(panes: &[Rect], what: &str) {
     }
 }
 
+/// Tile's order: each pane after the one before it down its column, or in a later column.
+fn in_column_order_without_overlap(panes: &[Rect], what: &str) {
+    for (i, a) in panes.iter().enumerate() {
+        for (j, b) in panes.iter().enumerate().skip(i + 1) {
+            let overlap = a.intersect(*b);
+            assert!(overlap.width() <= TOLERANCE || overlap.height() <= TOLERANCE, "{what}: panes {i} and {j} overlap: {a:?} {b:?}");
+            let later = b.center().x > a.right() - TOLERANCE || (near(a.left(), b.left()) && b.center().y > a.center().y);
+            assert!(later, "{what}: pane {j} comes after pane {i} column by column: {a:?} {b:?}");
+        }
+    }
+}
+
 fn widths(panes: &[Rect]) -> Vec<f32> {
     panes.iter().map(|pane| pane.width()).collect()
 }
@@ -315,15 +327,15 @@ fn bodies_shorter_than_the_room_keep_the_full_height_pass_after_pass() {
 
 #[trial]
 fn grid_and_stacked_splits_lay_out_and_drag_their_dividers() {
-    // Tile with five documents: three columns, two rows, the last row two cells.
+    // Tile with five documents: three columns, two rows, filled column by column, the last column one cell.
     let even = SplitAt::lines(Vec::new(), Vec::new()).rects(SplitLayout::Tile, 5, FULL);
     assert_eq!(even.len(), 5, "five documents tile into five panes");
-    in_reading_order_without_overlap(&even, "Tile of 5");
+    in_column_order_without_overlap(&even, "Tile of 5");
     assert!(even.iter().all(|pane| near(pane.width(), 200.0) && near(pane.height(), 200.0)), "even cells: {even:?}");
     let moved = SplitAt::lines(vec![0.2, 0.7], vec![0.4]).rects(SplitLayout::Tile, 5, FULL);
-    in_reading_order_without_overlap(&moved, "Tile of 5, moved lines");
-    assert!(near(moved[0].width(), 120.0) && near(moved[1].width(), 300.0) && near(moved[2].width(), 180.0), "{moved:?}");
-    assert!(near(moved[3].width(), 120.0) && near(moved[3].height(), 240.0), "the second row follows the lines: {moved:?}");
+    in_column_order_without_overlap(&moved, "Tile of 5, moved lines");
+    assert!(near(moved[0].width(), 120.0) && near(moved[2].width(), 300.0) && near(moved[4].width(), 180.0), "{moved:?}");
+    assert!(near(moved[1].width(), 120.0) && near(moved[1].height(), 240.0), "the second row follows the lines: {moved:?}");
 
     // A column list of the wrong length, out of order or outside 0–1 lays out even columns; the row list still applies.
     for columns in [vec![0.2], vec![0.7, 0.2], vec![0.2, 1.5], vec![0.2, f32::NAN]] {
@@ -358,7 +370,8 @@ fn grid_and_stacked_splits_lay_out_and_drag_their_dividers() {
     let gap = rect_of(&fixture, PANE, 0).width();
     assert!(gap > 1.0, "the first pane keeps the least width: {gap}");
     drag_divider(&mut fixture, 0, Vec2::new(1000.0, 0.0));
-    let second = rect_of(&fixture, PANE, 1).width();
+    // Tile fills column by column: pane 2 heads the second column.
+    let second = rect_of(&fixture, PANE, 2).width();
     assert!(near(second, gap), "the line stops as far short of its neighbour as of the edge: {second} against {gap}");
     let kept = fixture.data().present::<SplitAt>("split").cloned();
     assert_eq!(kept.map(|at| at.columns.len()), Some(2), "a drag writes the whole column list");

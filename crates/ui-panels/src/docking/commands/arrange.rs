@@ -1,7 +1,7 @@
 //! The Window › Arrange commands and how they place the document windows.
 
 use crate::runtime::commands::CommandState;
-use craft_behavior::dock::{Arrangement, DocumentWindows};
+use craft_behavior::dock::{Arrangement, DocumentWindows, arrange_rects};
 use craft_behavior::placement::cascade_rects;
 use egui::{Rect, Vec2};
 use std::hash::Hash;
@@ -44,7 +44,8 @@ pub enum ArrangeCommands {
     /// Floating windows stepped from the top left.
     #[command(label = "Cascade")]
     Cascade,
-    /// Every document in an even grid of split panes, floating windows docked first.
+    /// Every document in an even grid of split panes, filled column by column, floating windows docked first; while every
+    /// document floats, the windows stay floating, one per cell.
     #[command(label = "Tile")]
     Tile,
     /// The active document into a floating window.
@@ -174,6 +175,7 @@ pub fn arrange<D: Clone + Eq + Hash>(windows: &mut DocumentWindows<D>, command: 
     let ArrangeSpace { area, size, step, active } = space;
     let next_slot = |windows: &DocumentWindows<D>| cascade_rects(*area, *size, windows.floating.len() + 1, *step).pop();
     match arrangement {
+        Arrangement::Tile if tile_floating(windows, *area, active.as_ref()) => {}
         Arrangement::TileAllVertically | Arrangement::TileAllHorizontally | Arrangement::Tile => {
             windows.consolidate(active.as_ref());
             let documents = windows.docked.first().map_or(0, |group| group.documents.len());
@@ -216,4 +218,25 @@ pub fn arrange<D: Clone + Eq + Hash>(windows: &mut DocumentWindows<D>, command: 
         _ => {}
     }
     Arranged::Windows
+}
+
+/// Tile while every document is in a floating window (two or more windows): the windows stay floating and each takes
+/// one of Tile's cells over the document area, in the order of `floating` except the window of the `active` document,
+/// which takes the last cell (bottom right with six). `false`, changing nothing, while a document is docked or with
+/// fewer than two windows: Tile then docks them as before.
+fn tile_floating<D: Eq>(windows: &mut DocumentWindows<D>, area: Rect, active: Option<&D>) -> bool {
+    if windows.docked.iter().any(|group| !group.documents.is_empty()) {
+        return false;
+    }
+    let Some(mut cells) = arrange_rects(Arrangement::Tile, area, windows.floating.len()) else { return false };
+    if let Some(at) = active.and_then(|document| windows.floating.iter().position(|(group, _)| group.documents.contains(document))) {
+        let last = cells.pop();
+        if let Some(last) = last {
+            cells.insert(at, last);
+        }
+    }
+    for ((_, rect), cell) in windows.floating.iter_mut().zip(cells) {
+        *rect = cell;
+    }
+    true
 }

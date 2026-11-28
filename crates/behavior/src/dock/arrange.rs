@@ -33,7 +33,8 @@ pub enum Arrangement {
     ConsolidateAllToTabs,
     /// Floating windows stepped from the top left ([`cascade_rects`](crate::placement::cascade_rects)).
     Cascade,
-    /// Every document in an even grid of cells, floating windows docked first.
+    /// Every document in an even grid of cells filled column by column, floating windows docked
+    /// first; while every document floats, the windows stay floating, one per cell.
     Tile,
     /// The active document into a floating window.
     FloatInWindow,
@@ -79,9 +80,11 @@ impl Arrangement {
     }
 }
 
-/// The cells of an n-up or Tile All arrangement inside `area`, in reading order. `Tile All
-/// Vertically` gives `n` columns, `Horizontally` `n` rows, 3-up Stacked one left cell and two
-/// stacked on the right, 4-up and 6-up grids of 2×2 and 3×2.
+/// The cells of an n-up, Tile All or Tile arrangement inside `area`, in reading order except
+/// Tile's. `Tile All Vertically` gives `n` columns, `Horizontally` `n` rows, 3-up Stacked one
+/// left cell and two stacked on the right, 4-up and 6-up grids of 2×2 and 3×2. Tile gives a
+/// grid of about √n columns filled column by column, as Photoshop's does: with six documents,
+/// cells 0 and 1 make the first column, 2 and 3 the second, 4 and 5 the third.
 pub fn arrange_rects(arrangement: Arrangement, area: Rect, n: usize) -> Option<Vec<Rect>> {
     if n < 2 {
         return None;
@@ -110,7 +113,9 @@ pub fn arrange_rects(arrangement: Arrangement, area: Rect, n: usize) -> Option<V
         Arrangement::SixUp => grid(3, 2, 6),
         Arrangement::Tile => {
             let cols = (n as f32).sqrt().ceil() as usize;
-            grid(cols, n.div_ceil(cols), n)
+            let rows = n.div_ceil(cols);
+            let (w, h) = (area.width() / cols as f32, area.height() / rows as f32);
+            (0..n).map(|i| Rect::from_min_size(area.min + vec2((i / rows) as f32 * w, (i % rows) as f32 * h), vec2(w, h))).collect()
         }
         _ => return None,
     })
